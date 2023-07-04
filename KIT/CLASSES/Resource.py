@@ -1,6 +1,8 @@
 import random
 from enum import Enum
 
+import numpy as np
+
 
 class ResourceType(Enum):
     EMPTY = 0
@@ -11,11 +13,12 @@ class ResourceType(Enum):
 
 class Resource:
 
-    def __init__(self, *, amount: int = 200, decay_per_turn: int = 5, resource_type: ResourceType = ResourceType.EMPTY):
+    def __init__(self, *, position: np.ndarray, amount: int = 200, decay_per_turn: int = 5, resource_type: ResourceType = ResourceType.EMPTY):
         self.initial_amount = amount
         self.resource_type = resource_type
         self.amount = amount
         self.decay_per_turn = decay_per_turn
+        self.position = position
 
     def step(self):
 

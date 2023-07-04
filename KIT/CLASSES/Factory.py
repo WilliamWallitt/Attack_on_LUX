@@ -7,8 +7,9 @@ import uuid
 
 
 class Factory:
-    def __init__(self, *, stats: UnitStats, health: UnitHealth, position: np.ndarray, map_size: int):
+    def __init__(self, *, player: int, stats: UnitStats, health: UnitHealth, position: np.ndarray, map_size: int):
         self.id = uuid.uuid4()
+        self.player = player
         self.stats = stats
         self.health = health
         self.resource_type = ResourceType.FACTORY

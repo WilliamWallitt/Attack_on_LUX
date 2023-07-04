@@ -2,6 +2,7 @@ from typing import TypedDict, List
 from enum import Enum
 import uuid
 import numpy as np
+import random
 
 from KIT.CLASSES.Resource import ResourceType, Resource
 
@@ -42,9 +43,10 @@ class ProduceUnit(TypedDict):
     cost: int
 
 class Unit:
-    def __init__(self, stats: UnitStats, health: UnitHealth, position: np.ndarray,
+    def __init__(self, player: int, stats: UnitStats, health: UnitHealth, position: np.ndarray,
                  mining_options: List[UnitResource], unit_type: UnitType = UnitType.WORKER):
         self.id = uuid.uuid4()
+        self.player = player
         self.stats = stats
         self.unit_type = unit_type
         self.mining_options = mining_options
@@ -70,6 +72,7 @@ class Unit:
                 unit_resource["amount"] += amount_minded
 
     def move(self, movement: UnitMovement, game_map: np.ndarray):
+        # a[1] = direction (0 = center, 1 = up, 2 = right, 3 = down, 4 = left)
         move_deltas = np.array([[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0]])
         target_pos = self.position + move_deltas[movement]
         if target_pos[0] < 0 or target_pos[1] < 0 and game_map[0, 0]:
@@ -81,5 +84,17 @@ class Unit:
             if unit_resource is not None:
                 factory.health["amount"] += unit_resource["amount"]
                 unit_resource["amount"] = 0
+
+    def attack(self, unit: Unit):
+        if unit.position == self.position:
+            # Calculate damage dealt by the attacker, including a random dice roll
+            dice_roll = random.randint(1, 6)
+            damage = max(0, unit.stats["attack"] + dice_roll - self.stats["defence"])
+            self.health["amount"] = damage
+            if self.stats["hp"] >= damage:
+                self.health["alive"] = False
+                self.health["amount"] = 0
+            else:
+                self.stats["hp"] -= damage
 
     # maybe be able to heal factory??
