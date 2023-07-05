@@ -49,8 +49,12 @@ class AttackOnLuxWrapper(Map):
 
     def step(self, actions):
 
-
-
         self.current_agent = self.current_agent + 1 if self.current_agent < self.num_agents else 0
 
 
+x = AttackOnLuxWrapper(50, 2)
+for f in x.factories:
+    print(f.position)
+
+for a in x.agents:
+    print(a.position)

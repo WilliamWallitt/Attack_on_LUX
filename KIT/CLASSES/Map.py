@@ -3,8 +3,8 @@ from typing import Optional, Union, List, Tuple, TypedDict
 import numpy as np
 from KIT.CLASSES.Resource import Resource, ResourceType
 from KIT.CLASSES.Factory import Factory
-from KIT.CLASSES.Unit import Unit
-from KIT.UTILITIES.utilities import create_factory, produce_warrior_unit
+from KIT.CLASSES.Unit import Unit, produce_warrior_unit
+from KIT.CLASSES.Factory import create_factory
 import noise
 
 
@@ -26,11 +26,12 @@ class Map:
             for j in range(self.size):
                 x = i / scale
                 y = j / scale
-                value = noise.snoise2(x, y, octaves=5, persistence=0.5, lacunarity=2.0, repeatx=self.size, repeaty=self.size)
+                value = noise.snoise2(x, y, octaves=5, persistence=0.5, lacunarity=2.0, repeatx=self.size,
+                                      repeaty=self.size)
                 if value > threshold:
-                    self.resources.append(Resource(position=np.ndarray([i, j]), resource_type=ResourceType.SPICE))
+                    self.resources.append(Resource(position=np.array([i, j]), resource_type=ResourceType.SPICE))
                 else:
-                    self.resources.append(Resource(position=np.ndarray([i, j]), resource_type=ResourceType.WATER))
+                    self.resources.append(Resource(position=np.array([i, j]), resource_type=ResourceType.WATER))
 
     def place_factories_and_agents(self):
         factories_placed = 0
@@ -42,19 +43,19 @@ class Map:
             too_close = False
             for i in range(max(0, x - min_agent_distance), min(self.size, x + min_agent_distance + 1)):
                 for j in range(max(0, y - min_agent_distance), min(self.size, y + min_agent_distance + 1)):
-                    if len([x for x in self.factories if x.position == np.ndarray([i, j])]) != 0:
+                    if len([x for x in self.factories if x.position == np.array([i, j])]) != 0:
                         too_close = True
                         break
                 if too_close:
                     break
             if not too_close:
-                self.factories.append(create_factory(factories_placed, np.ndarray([x, y]), self.size))
+                self.factories.append(create_factory(factories_placed, np.array([x, y]), self.size))
                 # Spawn a worker adjacent to the agent
                 placed = False
                 for i in range(max(0, x - 1), min(self.size, x + 2)):
                     for j in range(max(0, y - 1), min(self.size, y + 2)):
-                        if len([x for x in self.agents if x.position == np.ndarray([x, y])]) != 0 and not placed:
-                            self.agents.append(produce_warrior_unit(factories_placed, np.ndarray([x, y])))
+                        if len([x for x in self.agents if x.position == np.array([x, y])]) != 0 and not placed:
+                            self.agents.append(produce_warrior_unit(factories_placed, np.array([x, y])))
                             placed = True
             factories_placed += 1
 
@@ -62,12 +63,12 @@ class Map:
         def get_random_point():
             return random.randint(0, self.size - 1), random.randint(0, self.size - 1)
 
-        def distance(p1, p2):
+        def calc_distance(p1, p2):
             return np.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
 
-        def is_valid_point(p, cities):
-            for city in cities:
-                if distance(p, (city.x, city.y)) < min_distance:
+        def is_valid_point(p, factories):
+            for factory in factories:
+                if calc_distance(p, factory.position) < min_distance:
                     return False
             return True
 
@@ -76,11 +77,11 @@ class Map:
         # Randomly select initial city locations
         for player in range(self.num_agents):
             x, y = get_random_point()
-            self.factories.append(create_factory(player, np.ndarray([x, y]), self.size))
+            self.factories.append(create_factory(player, np.array([x, y]), self.size))
 
         active_list = list(self.factories)
         current_player = 0
-        while active_list:
+        while active_list and current_player < self.num_agents:
             city_idx = random.randrange(len(active_list))
             current_city = active_list[city_idx]
             placed = False
@@ -94,22 +95,23 @@ class Map:
                 x = max(0, min(self.size - 1, x))
                 y = max(0, min(self.size - 1, y))
 
-                new_point = (x, y)
+                new_point = np.array([x, y])
 
                 if is_valid_point(new_point, self.factories):
-                    self.factories.append(create_factory(current_player, np.ndarray([x, y]), self.size))
+                    self.factories = list(filter(lambda x: x.player != current_player, self.factories))
+                    self.factories.append(create_factory(current_player, np.array([x, y]), self.size))
                     active_list.append(self.factories[-1])
                     # Spawn a worker adjacent to the agent
                     placed = False
                     for i in range(max(0, x - 1), min(self.size, x + 2)):
                         for j in range(max(0, y - 1), min(self.size, y + 2)):
-                            if len([x for x in self.agents if x.position == np.ndarray([x, y])]) != 0 and not placed:
-                                self.agents.append(produce_warrior_unit(current_player, np.ndarray([x, y])))
+                            if not placed and i != x and j != y:
+                                self.agents.append(produce_warrior_unit(current_player, np.array([i, j])))
                                 placed = True
+                                print("placed")
                     placed = True
                     current_player += 1
                     break
 
             if not placed:
                 active_list.pop(city_idx)
-

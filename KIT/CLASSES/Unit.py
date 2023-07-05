@@ -3,7 +3,6 @@ from enum import Enum
 import uuid
 import numpy as np
 import random
-
 from KIT.CLASSES.Resource import ResourceType, Resource
 
 
@@ -38,12 +37,14 @@ class UnitStats(TypedDict):
     attack: int
     defence: int
 
+
 class ProduceUnit(TypedDict):
     type: UnitType
     cost: int
 
+
 class Unit:
-    def __init__(self, player: int, stats: UnitStats, health: UnitHealth, position: np.ndarray,
+    def __init__(self, player: int, stats: UnitStats, health: UnitHealth, position: np.array,
                  mining_options: List[UnitResource], unit_type: UnitType = UnitType.WORKER):
         self.id = uuid.uuid4()
         self.player = player
@@ -71,30 +72,58 @@ class Unit:
             else:
                 unit_resource["amount"] += amount_minded
 
-    def move(self, movement: UnitMovement, game_map: np.ndarray):
+    def move(self, movement: UnitMovement):
         # a[1] = direction (0 = center, 1 = up, 2 = right, 3 = down, 4 = left)
         move_deltas = np.array([[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0]])
         target_pos = self.position + move_deltas[movement]
-        if target_pos[0] < 0 or target_pos[1] < 0 and game_map[0, 0]:
-            pass
+        if target_pos[0] < 0 or target_pos[1] < 0:
+            self.position += move_deltas[movement]
 
-    def transfer(self, factory: Factory):
-        if factory.position == self.position:
-            unit_resource = next((item for item in self.mining_options if item['type'] == factory.health["type"]), None)
-            if unit_resource is not None:
-                factory.health["amount"] += unit_resource["amount"]
-                unit_resource["amount"] = 0
+    def transfer(self, factory):
+        from KIT.CLASSES.Factory import Factory
+        if isinstance(factory, Factory):
+            if factory.position == self.position:
+                unit_resource = next((item for item in self.mining_options if item['type'] == factory.health["type"]), None)
+                if unit_resource is not None:
+                    factory.health["amount"] += unit_resource["amount"]
+                    unit_resource["amount"] = 0
 
-    def attack(self, unit: Unit):
-        if unit.position == self.position:
-            # Calculate damage dealt by the attacker, including a random dice roll
-            dice_roll = random.randint(1, 6)
-            damage = max(0, unit.stats["attack"] + dice_roll - self.stats["defence"])
-            self.health["amount"] = damage
-            if self.stats["hp"] >= damage:
-                self.health["alive"] = False
-                self.health["amount"] = 0
-            else:
-                self.stats["hp"] -= damage
+    def attack(self, unit):
+        if isinstance(unit, Unit):
+            if unit.position == self.position:
+                # Calculate damage dealt by the attacker, including a random dice roll
+                dice_roll = random.randint(1, 6)
+                damage = max(0, unit.stats["attack"] + dice_roll - self.stats["defence"])
+                self.health["amount"] = damage
+                if self.stats["hp"] >= damage:
+                    self.health["alive"] = False
+                    self.health["amount"] = 0
+                else:
+                    self.stats["hp"] -= damage
 
     # maybe be able to heal factory??
+
+
+def produce_worker_unit(player: int, position: np.array) -> Unit:
+    return Unit(
+        player=player,
+        stats={"hp": 10, "attack": 2, "defence": 10},
+        health={"amount": 100, "decay": 2, "type": ResourceType.WATER, "alive": True},
+        position=position,
+        mining_options=[
+            {"type": ResourceType.SPICE, "amount": 0, "mine_per_turn": 2},
+            {"type": ResourceType.WATER, "amount": 0, "mine_per_turn": 6}
+        ],
+    )
+
+
+def produce_warrior_unit(player: int, position: np.array) -> Unit:
+    return Unit(
+        player=player,
+        stats={"hp": 50, "attack": 20, "defence": 5},
+        health={"amount": 100, "decay": 4, "type": ResourceType.WATER, "alive": True},
+        position=position,
+        mining_options=[
+            {"type": ResourceType.WATER, "amount": 0, "mine_per_turn": 6}
+        ],
+    )

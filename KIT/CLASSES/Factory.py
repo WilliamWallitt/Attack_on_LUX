@@ -1,13 +1,12 @@
 import numpy as np
 
 from KIT.CLASSES.Resource import ResourceType
-from KIT.CLASSES.Unit import UnitStats, UnitHealth, UnitType, Unit
-from KIT.UTILITIES.utilities import produce_warrior_unit, produce_worker_unit
+from KIT.CLASSES.Unit import UnitStats, UnitHealth, UnitType, Unit, produce_worker_unit, produce_warrior_unit
 import uuid
 
 
 class Factory:
-    def __init__(self, *, player: int, stats: UnitStats, health: UnitHealth, position: np.ndarray, map_size: int):
+    def __init__(self, *, player: int, stats: UnitStats, health: UnitHealth, position: np.array, map_size: int):
         self.id = uuid.uuid4()
         self.player = player
         self.stats = stats
@@ -33,6 +32,15 @@ class Factory:
             for i in range(max(0, self.position[0] - 1), min(self.size, self.position[0] + 2)):
                 for j in range(max(0, self.position[1] - 1), min(self.size, self.position[1] + 2)):
                     if unit == UnitType.WARROR:
-                        return produce_warrior_unit(np.ndarray([i, j]))
+                        return produce_warrior_unit(self.player, np.array([i, j]))
                     else:
-                        return produce_worker_unit(np.ndarray([i, j]))
+                        return produce_worker_unit(self.player, np.array([i, j]))
+
+
+def create_factory(player: int, position: np.array, map_size: int) -> Factory:
+    return Factory(
+        player=player,
+        stats={"hp": 50, "attack": 0, "defence": 50},
+        health={"amount": 200, "decay": 2, "type": ResourceType.SPICE, "alive": True},
+        position=position,
+        map_size=map_size)
