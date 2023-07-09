@@ -108,7 +108,6 @@ class Map:
                             if not placed and i != x and j != y:
                                 self.agents.append(produce_warrior_unit(current_player, np.array([i, j])))
                                 placed = True
-                                print("placed")
                     placed = True
                     current_player += 1
                     break

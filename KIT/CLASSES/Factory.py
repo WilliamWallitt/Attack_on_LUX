@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 
 from KIT.CLASSES.Resource import ResourceType
@@ -22,7 +24,7 @@ class Factory:
         else:
             self.health["amount"] -= self.health["decay"]
 
-    def produce_unit(self, unit: UnitType) -> Unit:
+    def produce_unit(self, unit: UnitType) -> Optional[Unit]:
         resource_cost = 2
         if unit == UnitType.WARROR:
             resource_cost = 6
@@ -35,7 +37,7 @@ class Factory:
                         return produce_warrior_unit(self.player, np.array([i, j]))
                     else:
                         return produce_worker_unit(self.player, np.array([i, j]))
-
+        return None
 
 def create_factory(player: int, position: np.array, map_size: int) -> Factory:
     return Factory(

@@ -4,34 +4,46 @@ import numpy as np
 from gym import spaces
 
 from KIT.CLASSES.Map import Map
-
 import gym
 from gym.core import RenderFrame, ActType, ObsType
+from KIT.CLASSES.Player import Player
 
 # action space
 '''
 [center, up, right, down, left, 
-mine spice, mine water, 
+mine, 
 transfer,
 produce worker, produce warrior,
-attack worker, attack warrior
-] -> 12 actions
+attack unit,
+create factory
+] -> 11 actions
 
 '''
+
+
 class AttackOnLux(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, render_mode=None):
+    def __init__(self, size: int, num_agents: int, render_mode=None):
+        self.map = Map(size, num_agents)
+        self.players = [
+            Player(
+                agents=[agent for agent in self.map.agents if agent.player == player_id],
+                enemy_agents=[agent for agent in self.map.agents if agent.player != player_id],
+                factories=[factory for factory in self.map.factories if factory.player == player_id],
+                enemy_factories=[factory for factory in self.map.factories if factory.player != player_id],
+                player_id=player_id, resources=self.map.resources)
+            for player_id in range(num_agents)]
         self.window_size = 800  # The size of the PyGame window
         self.window = None
         self.clock = None
         self.font = None
         self.render_mode = render_mode
-        self.action_space = spaces.Discrete(12)
+        self.action_space = spaces.Discrete(11)
 
         pass
 
-    def step(self, action: ActType) -> Tuple[ObsType, float, bool, bool, dict]:
+    def step(self, actions) -> Tuple[ObsType, float, bool, bool, dict]:
         pass
 
     def render(self) -> Optional[Union[RenderFrame, List[RenderFrame]]]:
@@ -39,22 +51,8 @@ class AttackOnLux(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+        self.map = Map(size=self.map.size, num_agents=self.map.num_agents)
 
 
-class AttackOnLuxWrapper(Map):
-
-    def __init__(self, size: int, num_agents: int):
-
-        super().__init__(size, num_agents)
-
-    def step(self, actions):
-
-        self.current_agent = self.current_agent + 1 if self.current_agent < self.num_agents else 0
-
-
-x = AttackOnLuxWrapper(50, 2)
-for f in x.factories:
-    print(f.position)
-
-for a in x.agents:
-    print(a.position)
+attackOnLux = AttackOnLux(50, 2)
+attackOnLux.reset()
