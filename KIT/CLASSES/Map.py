@@ -49,13 +49,13 @@ class Map:
                 if too_close:
                     break
             if not too_close:
-                self.factories.append(create_factory(factories_placed, np.array([x, y]), self.size))
+                self.factories.append(create_factory(str(factories_placed), np.array([x, y]), self.size))
                 # Spawn a worker adjacent to the agent
                 placed = False
                 for i in range(max(0, x - 1), min(self.size, x + 2)):
                     for j in range(max(0, y - 1), min(self.size, y + 2)):
                         if len([x for x in self.agents if x.position == np.array([x, y])]) != 0 and not placed:
-                            self.agents.append(produce_warrior_unit(factories_placed, np.array([x, y])))
+                            self.agents.append(produce_warrior_unit(str(factories_placed), np.array([x, y])))
                             placed = True
             factories_placed += 1
 
@@ -77,7 +77,7 @@ class Map:
         # Randomly select initial city locations
         for player in range(self.num_agents):
             x, y = get_random_point()
-            self.factories.append(create_factory(player, np.array([x, y]), self.size))
+            self.factories.append(create_factory(str(player), np.array([x, y]), self.size))
 
         active_list = list(self.factories)
         current_player = 0
@@ -99,14 +99,14 @@ class Map:
 
                 if is_valid_point(new_point, self.factories):
                     self.factories = list(filter(lambda x: x.player != current_player, self.factories))
-                    self.factories.append(create_factory(current_player, np.array([x, y]), self.size))
+                    self.factories.append(create_factory(str(current_player), np.array([x, y]), self.size))
                     active_list.append(self.factories[-1])
                     # Spawn a worker adjacent to the agent
                     placed = False
                     for i in range(max(0, x - 1), min(self.size, x + 2)):
                         for j in range(max(0, y - 1), min(self.size, y + 2)):
                             if not placed and i != x and j != y:
-                                self.agents.append(produce_warrior_unit(current_player, np.array([i, j])))
+                                self.agents.append(produce_warrior_unit(str(current_player), np.array([i, j])))
                                 placed = True
                     placed = True
                     current_player += 1

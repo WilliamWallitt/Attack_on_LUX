@@ -44,7 +44,7 @@ class ProduceUnit(TypedDict):
 
 
 class Unit:
-    def __init__(self, player: int, stats: UnitStats, health: UnitHealth, position: np.array,
+    def __init__(self, player: str, stats: UnitStats, health: UnitHealth, position: np.array,
                  mining_options: List[UnitResource], unit_type: UnitType = UnitType.WORKER):
         self.id = uuid.uuid4()
         self.player = player
@@ -104,7 +104,7 @@ class Unit:
     # maybe be able to heal factory??
 
 
-def produce_worker_unit(player: int, position: np.array) -> Unit:
+def produce_worker_unit(player: str, position: np.array) -> Unit:
     return Unit(
         player=player,
         stats={"hp": 10, "attack": 2, "defence": 10},
@@ -117,7 +117,7 @@ def produce_worker_unit(player: int, position: np.array) -> Unit:
     )
 
 
-def produce_warrior_unit(player: int, position: np.array) -> Unit:
+def produce_warrior_unit(player: str, position: np.array) -> Unit:
     return Unit(
         player=player,
         stats={"hp": 50, "attack": 20, "defence": 5},

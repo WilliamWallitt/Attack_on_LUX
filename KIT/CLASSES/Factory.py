@@ -8,7 +8,7 @@ import uuid
 
 
 class Factory:
-    def __init__(self, *, player: int, stats: UnitStats, health: UnitHealth, position: np.array, map_size: int):
+    def __init__(self, *, player: str, stats: UnitStats, health: UnitHealth, position: np.array, map_size: int):
         self.id = uuid.uuid4()
         self.player = player
         self.stats = stats
@@ -39,7 +39,7 @@ class Factory:
                         return produce_worker_unit(self.player, np.array([i, j]))
         return None
 
-def create_factory(player: int, position: np.array, map_size: int) -> Factory:
+def create_factory(player: str, position: np.array, map_size: int) -> Factory:
     return Factory(
         player=player,
         stats={"hp": 50, "attack": 0, "defence": 50},

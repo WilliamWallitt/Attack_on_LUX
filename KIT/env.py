@@ -26,13 +26,14 @@ class AttackOnLux(gym.Env):
 
     def __init__(self, size: int, num_agents: int, render_mode=None):
         self.map = Map(size, num_agents)
+        self.num_actions = 10
         self.players = [
             Player(
                 agents=[agent for agent in self.map.agents if agent.player == player_id],
                 enemy_agents=[agent for agent in self.map.agents if agent.player != player_id],
                 factories=[factory for factory in self.map.factories if factory.player == player_id],
                 enemy_factories=[factory for factory in self.map.factories if factory.player != player_id],
-                player_id=player_id, resources=self.map.resources)
+                player_id=str(player_id), resources=self.map.resources, map_size=size, num_actions=self.num_actions)
             for player_id in range(num_agents)]
         self.window_size = 800  # The size of the PyGame window
         self.window = None
@@ -49,10 +50,17 @@ class AttackOnLux(gym.Env):
     def render(self) -> Optional[Union[RenderFrame, List[RenderFrame]]]:
         pass
 
+    def _get_observations(self, player: Player):
+        # Get the observations for a player's agents
+        return player.get_observation()
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.map = Map(size=self.map.size, num_agents=self.map.num_agents)
+        observations = [self._get_observations(player) for player in self.players]
+        return observations
 
 
 attackOnLux = AttackOnLux(50, 2)
-attackOnLux.reset()
+obs = attackOnLux.reset()
+print(obs)
