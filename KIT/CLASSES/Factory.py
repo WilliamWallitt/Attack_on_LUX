@@ -39,6 +39,7 @@ class Factory:
                         return produce_worker_unit(self.player, np.array([i, j]))
         return None
 
+
 def create_factory(player: str, position: np.array, map_size: int) -> Factory:
     return Factory(
         player=player,

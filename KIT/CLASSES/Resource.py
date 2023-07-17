@@ -1,4 +1,5 @@
 import random
+import uuid
 from enum import Enum
 
 import numpy as np
@@ -19,6 +20,7 @@ class Resource:
         self.amount = amount
         self.decay_per_turn = decay_per_turn
         self.position = position
+        self.id = uuid.uuid4()
 
     def step(self):
 

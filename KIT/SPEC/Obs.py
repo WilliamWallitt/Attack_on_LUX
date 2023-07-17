@@ -1,0 +1,32 @@
+import numpy as np
+from gym.spaces import Box, Dict, Discrete, MultiBinary, MultiDiscrete
+
+# how many more turns a given factory can survive...
+# num turns
+# phase (IMPORTANT, disc[0, 4] turns / cycle len)
+
+
+class AttackOnLuxObsSpec:
+
+    @staticmethod
+    def get_obs_spec(num_agents: int, size: int) -> Dict:
+        return Dict({
+            "worker": MultiBinary((1, num_agents, size, size)),
+            "worker_cargo_spice": Box(0., float("inf"), shape=(1, num_agents, size, size)),
+            "worker_cargo_water": Box(0., float("inf"), shape=(1, num_agents, size, size)),
+            "worker_health": Box(0., float("inf"), shape=(1, num_agents, size, size)),
+            "worker_hp": Box(0., float("inf"), shape=(1, num_agents, size, size)),
+
+            "warrior": MultiBinary((1, num_agents, size, size)),
+            "warrior_cargo_water": Box(0., float("inf"), shape=(1, num_agents, size, size)),
+            "warrior_health": Box(0., float("inf"), shape=(1, num_agents, size, size)),
+            "warrior_hp": Box(0., float("inf"), shape=(1, num_agents, size, size)),
+
+            "factory": MultiBinary((1, num_agents, size, size)),
+            "factory_cargo_spice": Box(0., float("inf"), shape=(1, num_agents, size, size)),
+            "factory_health": Box(0., float("inf"), shape=(1, num_agents, size, size)),
+
+            "water": Box(0., float("inf"), shape=(1, 1, size, size)),
+            "spice": Box(0., float("inf"), shape=(1, 1, size, size)),
+            "empty": Box(0., float("inf"), shape=(1, 1, size, size)),
+        })

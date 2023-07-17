@@ -25,11 +25,11 @@ class UnitResource(TypedDict):
 
 
 class UnitMovement(Enum):
-    CENTER: 0
-    UP: 1
-    RIGHT: 2
-    DOWN: 3
-    LEFT: 4
+    CENTER = 0
+    UP = 1
+    RIGHT = 2
+    DOWN = 3
+    LEFT = 4
 
 
 class UnitStats(TypedDict):
@@ -69,10 +69,11 @@ class Unit:
             amount_minded = resource.mine(unit_resource["mine_per_turn"])
             if unit_resource["type"] == self.health["type"]:
                 self.health["amount"] += amount_minded
+                unit_resource["amount"] += amount_minded
             else:
                 unit_resource["amount"] += amount_minded
 
-    def move(self, movement: UnitMovement):
+    def move(self, movement: int):
         # a[1] = direction (0 = center, 1 = up, 2 = right, 3 = down, 4 = left)
         move_deltas = np.array([[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0]])
         target_pos = self.position + move_deltas[movement]

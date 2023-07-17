@@ -20,7 +20,7 @@ class Map:
         self.place_factories_and_agents_poisson_disk_sampling()
         self.current_agent = 0
 
-    def create_non_random_resource_distribution(self, scale=100.0, threshold=0.5):
+    def create_non_random_resource_distribution(self, scale=100.0, threshold=-0.1):
 
         for i in range(self.size):
             for j in range(self.size):
@@ -29,8 +29,10 @@ class Map:
                 value = noise.snoise2(x, y, octaves=5, persistence=0.5, lacunarity=2.0, repeatx=self.size,
                                       repeaty=self.size)
                 if value > threshold:
+                    print(f"Placing SPICE at position {i, j}")
                     self.resources.append(Resource(position=np.array([i, j]), resource_type=ResourceType.SPICE))
                 else:
+                    print(f"Place WATER at position {i, j}")
                     self.resources.append(Resource(position=np.array([i, j]), resource_type=ResourceType.WATER))
 
     def place_factories_and_agents(self):
