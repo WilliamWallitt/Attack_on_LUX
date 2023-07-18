@@ -16,23 +16,31 @@ class Map:
         self.factories: List[Factory] = []
         self.agents: List[Unit] = []
         self.resources: List[Resource] = []
-        self.create_non_random_resource_distribution()
+        self.create_random_resource_distribution()
         self.place_factories_and_agents_poisson_disk_sampling()
         self.current_agent = 0
 
-    def create_non_random_resource_distribution(self, scale=100.0, threshold=-0.1):
+    # def create_non_random_resource_distribution(self, scale=50.0, threshold=-0.005):
+        
+    #     for i in range(self.size):
+    #         for j in range(self.size):
+    #             x = i / scale
+    #             y = j / scale
+    #             value = noise.snoise2(x, y, octaves=5, persistence=0.5, lacunarity=2.0, repeatx=self.size,
+    #                                   repeaty=self.size)
+    #             if value > threshold:
+    #                 #print(f"Placing SPICE at position {i, j}")
+    #                 self.resources.append(Resource(position=np.array([i, j]), resource_type=ResourceType.SPICE))
+    #             else:
+    #                 #print(f"Place WATER at position {i, j}")
+    #                 self.resources.append(Resource(position=np.array([i, j]), resource_type=ResourceType.WATER))
 
+    def create_random_resource_distribution(self, probability=0.33):
         for i in range(self.size):
             for j in range(self.size):
-                x = i / scale
-                y = j / scale
-                value = noise.snoise2(x, y, octaves=5, persistence=0.5, lacunarity=2.0, repeatx=self.size,
-                                      repeaty=self.size)
-                if value > threshold:
-                    print(f"Placing SPICE at position {i, j}")
+                if random.uniform(0, 1) > probability:
                     self.resources.append(Resource(position=np.array([i, j]), resource_type=ResourceType.SPICE))
                 else:
-                    print(f"Place WATER at position {i, j}")
                     self.resources.append(Resource(position=np.array([i, j]), resource_type=ResourceType.WATER))
 
     def place_factories_and_agents(self):
@@ -57,7 +65,7 @@ class Map:
                 for i in range(max(0, x - 1), min(self.size, x + 2)):
                     for j in range(max(0, y - 1), min(self.size, y + 2)):
                         if len([x for x in self.agents if x.position == np.array([x, y])]) != 0 and not placed:
-                            self.agents.append(produce_warrior_unit(str(factories_placed), np.array([x, y])))
+                            self.agents.append(produce_warrior_unit(str(factories_placed), np.array([x, y]), self.size))
                             placed = True
             factories_placed += 1
 
@@ -100,7 +108,7 @@ class Map:
                 new_point = np.array([x, y])
 
                 if is_valid_point(new_point, self.factories):
-                    self.factories = list(filter(lambda x: x.player != current_player, self.factories))
+                    self.factories = list(filter(lambda x: str(x.player) != str(current_player), self.factories))
                     self.factories.append(create_factory(str(current_player), np.array([x, y]), self.size))
                     active_list.append(self.factories[-1])
                     # Spawn a worker adjacent to the agent
@@ -108,7 +116,7 @@ class Map:
                     for i in range(max(0, x - 1), min(self.size, x + 2)):
                         for j in range(max(0, y - 1), min(self.size, y + 2)):
                             if not placed and i != x and j != y:
-                                self.agents.append(produce_warrior_unit(str(current_player), np.array([i, j])))
+                                self.agents.append(produce_warrior_unit(str(current_player), np.array([i, j]), self.size))
                                 placed = True
                     placed = True
                     current_player += 1

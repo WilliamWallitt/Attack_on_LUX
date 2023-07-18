@@ -33,7 +33,6 @@ class UnitMovement(Enum):
 
 
 class UnitStats(TypedDict):
-    hp: int
     attack: int
     defence: int
 
@@ -45,7 +44,7 @@ class ProduceUnit(TypedDict):
 
 class Unit:
     def __init__(self, player: str, stats: UnitStats, health: UnitHealth, position: np.array,
-                 mining_options: List[UnitResource], unit_type: UnitType = UnitType.WORKER):
+                 mining_options: List[UnitResource], size: int, unit_type: UnitType = UnitType.WORKER):
         self.id = uuid.uuid4()
         self.player = player
         self.stats = stats
@@ -53,78 +52,78 @@ class Unit:
         self.mining_options = mining_options
         self.health = health
         self.position = position
+        self.size = size
 
     def step(self):
-        if self.health["amount"] - self.health["decay"] < 0 or self.stats["hp"] == 0:
+        self.health["amount"] -= self.health["decay"]
+
+        if self.health["amount"] < 0:
             self.health["amount"] = 0
             self.health["alive"] = False
-        else:
-            self.health["amount"] -= self.health["decay"]
 
     def mine(self, resource: Resource):
-
-        unit_resource = next((item for item in self.mining_options if item['type'] == resource.resource_type), None)
-
-        if unit_resource is not None:
-            amount_minded = resource.mine(unit_resource["mine_per_turn"])
-            if unit_resource["type"] == self.health["type"]:
-                self.health["amount"] += amount_minded
-                unit_resource["amount"] += amount_minded
-            else:
-                unit_resource["amount"] += amount_minded
+        for item in self.mining_options:
+            if item['type'] == resource.resource_type and item is not None:
+                amount_minded = resource.mine(item["mine_per_turn"])
+                if item["type"] == self.health["type"]:
+                    self.health["amount"] += amount_minded
+                    item["amount"] += amount_minded
+                else:
+                    item["amount"] += amount_minded
 
     def move(self, movement: int):
         # a[1] = direction (0 = center, 1 = up, 2 = right, 3 = down, 4 = left)
         move_deltas = np.array([[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0]])
         target_pos = self.position + move_deltas[movement]
-        if target_pos[0] < 0 or target_pos[1] < 0:
+        if (target_pos[0] >= 0 and target_pos[0] < self.size) and (target_pos[1] >= 0 and target_pos[1] < self.size):
             self.position += move_deltas[movement]
 
     def transfer(self, factory):
         from KIT.CLASSES.Factory import Factory
         if isinstance(factory, Factory):
-            if factory.position == self.position:
-                unit_resource = next((item for item in self.mining_options if item['type'] == factory.health["type"]), None)
-                if unit_resource is not None:
-                    factory.health["amount"] += unit_resource["amount"]
-                    unit_resource["amount"] = 0
+            if np.array_equal(factory.position, self.position):
+                for item in self.mining_options:
+                    if item['type'] == factory.health["type"] and item is not None:
+                        factory.health["amount"] += item["amount"]
+                        item["amount"] = 0
 
     def attack(self, unit):
         if isinstance(unit, Unit):
-            if unit.position == self.position:
+            if np.array_equal(unit.position, self.position):
                 # Calculate damage dealt by the attacker, including a random dice roll
                 dice_roll = random.randint(1, 6)
                 damage = max(0, unit.stats["attack"] + dice_roll - self.stats["defence"])
-                self.health["amount"] = damage
-                if self.stats["hp"] >= damage:
+                self.health["amount"] -= damage
+
+                if self.health["amount"] < 0:
                     self.health["alive"] = False
                     self.health["amount"] = 0
-                else:
-                    self.stats["hp"] -= damage
 
     # maybe be able to heal factory??
 
 
-def produce_worker_unit(player: str, position: np.array) -> Unit:
+def produce_worker_unit(player: str, position: np.array, size) -> Unit:
     return Unit(
         player=player,
-        stats={"hp": 10, "attack": 2, "defence": 10},
-        health={"amount": 100, "decay": 2, "type": ResourceType.WATER, "alive": True},
+        stats={"attack": 2, "defence": 10},
+        health={"amount": 100, "decay": 1, "type": ResourceType.WATER, "alive": True},
         position=position,
         mining_options=[
             {"type": ResourceType.SPICE, "amount": 0, "mine_per_turn": 2},
             {"type": ResourceType.WATER, "amount": 0, "mine_per_turn": 6}
         ],
+        size=size
     )
 
 
-def produce_warrior_unit(player: str, position: np.array) -> Unit:
+def produce_warrior_unit(player: str, position: np.array, size) -> Unit:
     return Unit(
         player=player,
-        stats={"hp": 50, "attack": 20, "defence": 5},
-        health={"amount": 100, "decay": 4, "type": ResourceType.WATER, "alive": True},
+        stats={"attack": 6, "defence": 5},
+        health={"amount": 100, "decay": 2, "type": ResourceType.WATER, "alive": True},
         position=position,
         mining_options=[
             {"type": ResourceType.WATER, "amount": 0, "mine_per_turn": 6}
         ],
+        size=size
     )
