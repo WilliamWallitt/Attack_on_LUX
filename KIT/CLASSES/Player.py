@@ -7,6 +7,8 @@ from KIT.CLASSES.Resource import Resource, ResourceType
 from KIT.CLASSES.Factory import Factory
 from KIT.CLASSES.Unit import Unit, produce_warrior_unit, UnitMovement, UnitType
 from KIT.CLASSES.Factory import create_factory
+import time
+import torch
 
 
 class Player:
@@ -22,6 +24,7 @@ class Player:
         self.resources: List[Resource] = resources
         self.map_size = map_size
         self.num_actions = num_actions
+        self.moves = 0
 
     def __get_factory(self, agent: Unit):
         return next((item for item in self.factories if np.array_equal(item.position, agent.position) and item.player == self.player),
@@ -36,9 +39,20 @@ class Player:
 
     def __get_enemy_agent(self, agent: Unit):
         return next((item for item in self.enemy_agents if np.array_equal(item.position, agent.position)), None)
+    
+    def calculate_rewards(self):
+        rewards = 0
+        for agent in self.agents:
+            rewards += agent.health["amount"]  # reward for survival
+        
+        for agent in self.enemy_agents:
+            rewards += (100 - agent.health["amount"]) * 0.25
+        
+        # rewards += 100 * (1.25**self.moves)  # reward for survival
+        
+        return rewards
 
-    def execute_actions(self, actions):
-        rewards = []
+    def execute_actions(self, actions, agent_id: int):
         '''
         [center, up, right, down, left, 
         mine spice, 
@@ -48,47 +62,68 @@ class Player:
         ] -> 10 actions
         '''
 
-        for i, agent in enumerate(self.agents):
-            action = actions[i]
-            action_idx = action
+        for factory in self.factories:
+            factory.step()
+
+        if True:
+            agent = self.agents[agent_id]
+            action_idx = np.argmax(actions)
             assert action_idx < self.num_actions, f"action out of range expected 0 < action < {self.num_actions} got {action_idx}"
 
             if action_idx < 5:
-                print(f"agent {agent.id} moving {UnitMovement(action_idx).name}")
+                # print(f"agent {agent.id} moving {UnitMovement(action_idx).name}")
                 agent.move(action_idx)
             if action_idx == 5:
                 resource = self.__get_resource(agent)
                 if resource is not None:
-                    print(f"agent {agent.id} mining resource {resource.id} of type {resource.resource_type.name}")
+                    # print(f"agent {agent.id} mining resource {resource.id} of type {resource.resource_type.name}")
                     agent.mine(resource)
             if action_idx == 6:
                 factory = self.__get_factory(agent)
                 if factory is not None:
-                    print(f"agent {agent.id} transferring resource to factory {factory.id}")
+                    # print(f"agent {agent.id} transferring resource to factory {factory.id}")
                     agent.transfer(factory)
             if action_idx == 7:
                 factory = self.__get_factory(agent)
                 if factory is not None:
-                    print(f"factory {factory.id} producing worker")
-                    factory.produce_unit(UnitType.WORKER)
+                    # print(f"factory {factory.id} producing worker")
+                    new_worker = factory.produce_unit(UnitType.WORKER)
+                    if new_worker is not None:
+                        self.agents.append(new_worker)
             if action_idx == 8:
                 factory = self.__get_factory(agent)
                 if factory is not None:
-                    print(f"factory {factory.id} producing warrior")
-                    factory.produce_unit(UnitType.WARROR)
+                    # print(f"factory {factory.id} producing warrior")
+                    new_warrior = factory.produce_unit(UnitType.WARROR)
+
+                    if new_warrior is not None:
+                        self.agents.append(new_warrior)
             if action_idx == 9:
                 enemy_agent = self.__get_enemy_agent(agent)
                 if enemy_agent is not None:
-                    print(f"agent {agent.id} attacking enemy agent {enemy_agent.id}")
+                    # print(f"agent {agent.id} attacking enemy agent {enemy_agent.id}")
                     agent.attack(enemy_agent)
             if action_idx == 10:
                 factory = self.__get_factory(agent)
                 enemy_agent = self.__get_enemy_agent(agent)
                 enemy_factory = self.__get_enemy_factory(agent)
                 if factory is not None and enemy_agent is not None and enemy_factory is not None:
-                    print(f"agent creating factory @ position {agent.position}")
-                    create_factory(self.player, agent.position, map_size=self.map_size)
-        return [], self.is_game_over()
+                    # print(f"agent creating factory @ position {agent.position}")
+                    self.factories.append(
+                        create_factory(self.player, agent.position, map_size=self.map_size)
+                    )
+            
+        for agent in self.agents:
+            agent.step()
+        
+        self.agents = [agent for agent in self.agents if agent.health["alive"]]
+        self.factories = [factory for factory in self.factories if factory.health["alive"]]
+        
+        self.moves += 1
+        
+        rewards = self.calculate_rewards()
+        
+        return rewards, self.is_game_over()
 
     def get_observation(self) -> dict:
         # Return the current observation for the agent
@@ -118,28 +153,6 @@ class Player:
             'health': x.health
         } for x in self.factories]
 
-        # obs[self.player]['resources'] = [{
-        #     'position': x.position,
-        #     'amount': x.amount,
-        #     'type': x.resource_type
-        # } for x in self.resources]
-
-        # for key, group in itertools.groupby(self.enemy_agents, lambda x: x.player):
-        #     obs[key] = {}
-        #     obs[key]['agents'] = [{
-        #         'position': x.position,
-        #         'stats': x.stats,
-        #         'health': x.health
-        #     } for x in group]
-        #
-        # for key, group in itertools.groupby(self.enemy_factories, lambda x: x.player):
-        #     obs[key] = {}
-        #     obs[key]['agents'] = [{
-        #         'position': x.position,
-        #         'stats': x.stats,
-        #         'health': x.health
-        #     } for x in group]
-
         return obs
 
     def choose_action(self, observation) -> int:
@@ -156,8 +169,9 @@ class Player:
         num_alive_factories = sum(x.health["alive"] for x in self.factories)
         num_alive_agents = sum(x.health["alive"] for x in self.agents)
 
-        if num_alive_factories == 0 or (num_alive_agents == 0 and sum(
-                x.health["amount"] for x in self.factories if x.health["amount"] > 6) == 0):
+        if num_alive_agents == 0: #  sum(x.health["amount"] for x in self.factories if x.health["amount"] > 6) == 0) ????
+            print("GAME OVER")
+            print("TURNS SURVIVED", self.moves)
             return True
 
         return False

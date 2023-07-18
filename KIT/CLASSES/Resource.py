@@ -14,23 +14,30 @@ class ResourceType(Enum):
 
 class Resource:
 
-    def __init__(self, *, position: np.ndarray, amount: int = 200, decay_per_turn: int = 5, resource_type: ResourceType = ResourceType.EMPTY):
+    def __init__(self, *, position: np.ndarray, amount: int = 500, decay_per_turn: int = 1, max_respawn_tick: int = 250, resource_type: ResourceType = ResourceType.EMPTY):
         self.initial_amount = amount
         self.resource_type = resource_type
         self.amount = amount
         self.decay_per_turn = decay_per_turn
+        self.max_respawn_tick = max_respawn_tick
         self.position = position
         self.id = uuid.uuid4()
+        self.respawn_tick = 0
 
     def step(self):
-
-        if self.amount - self.decay_per_turn < 0:
-            self.resource_type = random.choice(list(ResourceType))
-            self.amount = self.initial_amount
+        if self.respawn_tick is not None and self.respawn_tick > 0:
+            self.respawn_tick -= 1
+        elif self.respawn_tick == 0:
+            self.resource_type = random.choice([ResourceType.WATER, ResourceType.SPICE])
+            self.amount = random.randint(self.initial_amount // 10, self.initial_amount)
+            self.respawn_tick = None
         else:
             self.amount -= self.decay_per_turn
 
-        self.amount -= self.decay_per_turn
+            if self.amount <= 0:
+                self.resource_type = ResourceType.EMPTY
+                self.amount = 0
+                self.respawn_tick = random.randint(0, self.max_respawn_tick)
 
     def mine(self, amount) -> int:
         if self.amount < amount:
