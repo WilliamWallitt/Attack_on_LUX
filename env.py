@@ -20,6 +20,9 @@ from torch.distributions.normal import Normal
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
+import copy
+import keyboard
+import torch.nn.functional as F
 
 # action space
 '''
@@ -28,8 +31,9 @@ mine,
 transfer,
 produce worker, produce warrior,
 attack unit,
-create factory
-] -> 11 actions
+create factory,
+select_next_agent
+] -> 12 actions
 
 '''
 
@@ -41,7 +45,7 @@ class AttackOnLux(gym.Env):
         self.map = None
         self.size = size
         self.num_agents = num_agents
-        self.num_actions = 11
+        self.num_actions = 12
         self.players = []
         self.window_size = 800  # The size of the PyGame window
         self.scale = 35
@@ -60,16 +64,18 @@ class AttackOnLux(gym.Env):
         self.font = pygame.font.SysFont('Arial', 12)
         pygame.display.set_caption('ATTACK ON LUX')
         self.display_surface = pygame.display.set_mode((self.size * self.scale, self.size * self.scale), pygame.HWSURFACE)
-        self.player_surface = pygame.image.load('gridworld/player.png').convert()
-        self.block_surface = pygame.image.load('gridworld/block.png').convert()
-        self.water_surface = pygame.image.load('gridworld/water.jpeg').convert()
-        self.spice_surface = pygame.image.load('gridworld/spice.webp').convert()
-        self.factory_surface = pygame.image.load('gridworld/factory.png').convert()
+        self.unit_red_surface = pygame.image.load('gridworld/player_red_2.png').convert()
+        self.unit_blue_surface = pygame.image.load('gridworld/player_blue_2.png').convert()
+        self.block_surface = pygame.image.load('gridworld/block_2.png').convert()
+        self.water_surface = pygame.image.load('gridworld/water_2.png').convert()
+        self.spice_surface = pygame.image.load('gridworld/spice_2.png').convert()
+        self.factory_red_surface = pygame.image.load('gridworld/factory_red_2.png').convert()
+        self.factory_blue_surface = pygame.image.load('gridworld/factory_blue_2.png').convert()
 
         self.running = True
 
     def render(self):
-        self.display_surface.fill((124, 252, 0))
+        self.display_surface.fill((255, 255, 255))
         
         for resource in self.map.resources:
             x, y = resource.position[0], resource.position[1]
@@ -83,14 +89,23 @@ class AttackOnLux(gym.Env):
             elif resource.resource_type == ResourceType.FACTORY:
                 self.display_surface.blit(self.factory_surface, (x * self.scale, y * self.scale))
         
-        for player in self.players:
+        for i, player in enumerate(self.players):
+            if i % 2 == 0:
+                unit_surface = self.unit_blue_surface
+                factory_surface = self.factory_blue_surface
+            else:
+                unit_surface = self.unit_red_surface
+                factory_surface = self.factory_red_surface
+            
             for agent in player.agents:
                 x, y = agent.position[0], agent.position[1]
-                self.display_surface.blit(self.player_surface, (x * self.scale, y * self.scale))
+                self.display_surface.blit(unit_surface, (x * self.scale, y * self.scale))
             
             for agent in player.factories:
                 x, y = agent.position[0], agent.position[1]
-                self.display_surface.blit(self.factory_surface, (x * self.scale, y * self.scale))
+                self.display_surface.blit(factory_surface, (x * self.scale, y * self.scale))
+            
+            
                 
         if self.clock is None and self.render_mode == "human":
             self.clock = pygame.time.Clock()
@@ -99,9 +114,9 @@ class AttackOnLux(gym.Env):
         pygame.event.pump()
         pygame.display.update()
 
-    def step(self, actions, player_id: int, agent_id: int):
+    def step(self, action_idx, player_id: int, agent_id: int, selectable_agents=[]):
         done = False
-        rewards, agent_done = self.players[player_id].execute_actions(actions, agent_id)
+        rewards, agent_done = self.players[player_id].execute_actions(action_idx, agent_id)
         done = done or agent_done
         # if self.turn > 50:
         #     done = True
@@ -110,18 +125,21 @@ class AttackOnLux(gym.Env):
         for resource in self.map.resources:
             resource.step()
 
-        return self.get_observations(player_id, agent_id), rewards, done, False, {}
+        return self.get_observations(player_id, agent_id, selectable_agents), rewards, done, False, {}
 
     def close(self):
         if self.window is not None:
             pygame.display.quit()
             pygame.quit()
 
-    def get_observations(self, player_id: int, agent_id: int):
+    def get_observations(self, player_id: int, agent_id: Optional[str] = None, selectable_agents=[]):
         observations = {
             key: val.copy() #if val.ndim == 3 else val[:, :, :self.size, :self.size].copy() * 0
             for key, val in self.observation_space.sample().items()
         }
+
+        if agent_id is None:
+            agent_id = self.players[player_id].agents[0].id
 
         # TODO custom features for each agent???
 
@@ -129,6 +147,10 @@ class AttackOnLux(gym.Env):
         for agent in player_observation[str(player_id)]["worker"]:
             x, y = agent["position"][0], agent["position"][1]
             observations["worker"][0, x, y] = 1
+
+            for i, selectable_agent in enumerate(selectable_agents):
+                if agent["id"] == selectable_agent.id:
+                    observations["selectable_worker"][0, x, y] = i
 
             spice = next((item for item in agent["mining_options"] if item['type'] == ResourceType.SPICE), None)
             water = next((item for item in agent["mining_options"] if item['type'] == ResourceType.WATER), None)
@@ -155,6 +177,10 @@ class AttackOnLux(gym.Env):
             x, y = agent["position"][0], agent["position"][1]
 
             observations["warrior"][0, x, y] = 1
+
+            for i, selectable_agent in enumerate(selectable_agents):
+                if agent["id"] == selectable_agent.id:
+                    observations["selectable_warrior"][0, x, y] = i
 
             water = next((item for item in agent["mining_options"] if item['type'] == ResourceType.WATER), None)
             health = agent["health"]["amount"]
@@ -203,7 +229,7 @@ class AttackOnLux(gym.Env):
 
         return observations
 
-    def reset(self, player_id: int = 0, agent_id: int = 0):
+    def reset(self, player_id: int = 0, agent_id: Optional[str] = None, selectable_agents=[]):
         self.map = Map(size=self.size, num_agents=self.num_agents)
         self.players = [
             Player(
@@ -214,7 +240,7 @@ class AttackOnLux(gym.Env):
                 player_id=str(player_id), resources=self.map.resources, map_size=self.size,
                 num_actions=self.num_actions)
             for player_id in range(self.num_agents)]
-        return self.get_observations(player_id, agent_id)
+        return self.get_observations(player_id, agent_id, selectable_agents)
 
 class REINFORCE:
     """REINFORCE algorithm."""
@@ -229,8 +255,8 @@ class REINFORCE:
         """
 
         # Hyperparameters
-        self.learning_rate = 1e-4  # Learning rate for policy optimization
-        self.gamma = 0.99  # Discount factor
+        self.learning_rate = 1e-5  # Learning rate for policy optimization
+        self.gamma = 0.8  # Discount factor
         self.eps = 1e-6  # small number for mathematical stability
 
         self.probs = []  # Stores probability values of the sampled action
@@ -248,7 +274,6 @@ class REINFORCE:
         Returns:
             action: Action to be performed
         """
-        state = state.reshape(1, 15*8*8)
         state = torch.tensor(np.array([state]))
         action_means, action_stddevs = self.net(state)
 
@@ -303,26 +328,13 @@ class Policy_Network(nn.Module):
         """
         super().__init__()
 
-        hidden_space1 = 256  # Nothing special with 16, feel free to change
-        hidden_space2 = 128  # Nothing special with 32, feel free to change
-
-        # Shared Network
-        self.shared_net = nn.Sequential(
-            nn.Linear(obs_space_dims, hidden_space1),
-            nn.Tanh(),
-            nn.Linear(hidden_space1, hidden_space2),
-            nn.Tanh(),
-        )
-
-        # Policy Mean specific Linear Layer
-        self.policy_mean_net = nn.Sequential(
-            nn.Linear(hidden_space2, action_space_dims)
-        )
-
-        # Policy Std Dev specific Linear Layer
-        self.policy_stddev_net = nn.Sequential(
-            nn.Linear(hidden_space2, action_space_dims)
-        )
+        self.conv1 = nn.Conv2d(obs_space_dims, 32, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
+        
+        self.fc = nn.Linear(128*8*8, 512)  # flattening output of conv layers
+        self.policy_mean_net = nn.Linear(512, action_space_dims)
+        self.policy_stddev_net = nn.Linear(512, action_space_dims)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Conditioned on the observation, returns the mean and standard deviation
@@ -335,80 +347,153 @@ class Policy_Network(nn.Module):
             action_means: predicted mean of the normal distribution
             action_stddevs: predicted standard deviation of the normal distribution
         """
-        shared_features = self.shared_net(x.float())
-
-        action_means = self.policy_mean_net(shared_features)
-        action_stddevs = torch.log(
-            1 + torch.exp(self.policy_stddev_net(shared_features))
-        )
+        x = F.relu(self.conv1(x.float()))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+        
+        x = x.view(x.size()[0], -1)  # flattening
+        x = F.relu(self.fc(x))
+        
+        action_means = self.policy_mean_net(x)
+        action_stddevs = torch.log(1 + torch.exp(self.policy_stddev_net(x)))
 
         return action_means, action_stddevs
 
 
 attackOnLux = AttackOnLux(render_mode="human", size=8, num_agents=2)
 attackOnLux.init()
+observations = attackOnLux.reset(player_id=0, agent_id=None)
 done = False
 
-total_num_episodes = 100  # Total number of episodes
+total_num_episodes = 100000  # Total number of episodes
 # Observation-space of InvertedPendulum-v4 (4)
 #obs_space_dims = attackOnLux.observation_space.shape[0]
 # Action-space of InvertedPendulum-v4 (1)
 #action_space_dims = attackOnLux.action_space.shape[0]
 rewards_over_seeds = []
 
-for seed in [1, 5, 13]:  # Fibonacci seeds
-    # set seed
-    # torch.manual_seed(seed)
-    # random.seed(seed)
-    # np.random.seed(seed)
+# set seed
+# torch.manual_seed(seed)
+# random.seed(seed)
+# np.random.seed(seed)
 
-    # Reinitialize model every seed
-    model = REINFORCE(64*15, 11)
-    #neg_model = REINFORCE(64*15, 11)
-    reward_over_episodes = []
+# Reinitialize model every seed
+model = REINFORCE(17, 12)
+#neg_model = REINFORCE(64*15, 11)
+cumulative_moves = []
 
-    for episode in range(total_num_episodes):
-        # gymnasium v26 requires users to set seed while resetting the environment
+for episode in range(total_num_episodes):
+    # gymnasium v26 requires users to set seed while resetting the environment
 
-        observations = None
-        has_reset = False
-        done = False
+    observations = None
+    has_reset = False
+    done = False
+    
 
-        pooled_rewards = []
+    while not done:
+        for player_id_turn in range(attackOnLux.num_agents):
+            selected_agent = False
+            must_move_agent = False
+            selectable_agents = attackOnLux.players[player_id_turn].agents
+            selectable_agent_probs = []
+            agent_idx = 0
 
-        agent_id_idx = {str(player_id): 0 for player_id in attackOnLux.num_agents}
+            attackOnLux.players[player_id_turn].enemy_agents = [agent for agent in attackOnLux.map.agents if agent.player != str(player_id_turn)]
+            attackOnLux.players[player_id_turn].enemy_factories = [factory for factory in attackOnLux.map.factories if factory.player != str(player_id_turn)]
+            
+            random.shuffle(selectable_agents) # remove bias
 
-        while not done:
-            for player_id_turn in range(attackOnLux.num_agents):
+            while not selected_agent and len(selectable_agents) > 0:
                 if not has_reset:
-                    observations = attackOnLux.reset(player_id=player_id_turn, agent_id=agent_id_idx[str(player_id_turn)])
+                    observations = attackOnLux.reset(player_id=player_id_turn, agent_id=None, selectable_agents=selectable_agents)
                     has_reset = True
                 else:
-                    observations = attackOnLux.get_observations(player_id=player_id_turn, agent_id=agent_id_idx[str(player_id_turn)])
+                    observations = attackOnLux.get_observations(player_id=player_id_turn, agent_id=selectable_agents[agent_idx].id, selectable_agents=selectable_agents)
                 
                 np_observations = np.concatenate([x for x in observations.values()], axis=0)
-                np_observations = np.expand_dims(np_observations, axis=0)
 
-                action = model.sample_action(np_observations)
-                #neg_action = neg_model.sample_action(np_observations)
+                actions = model.sample_action(np_observations)
+                actions = np.exp(actions) / np.exp(actions).sum() # softmax
 
-                # Step return type - `tuple[ObsType, SupportsFloat, bool, bool, dict[str, Any]]`
-                # These represent the next observation, the reward from the step,
-                # if the episode is terminated, if the episode is truncated and
-                # additional info from the step
-                observations, rewards, done, _, _ = attackOnLux.step(action, player_id_turn, agent_id_idx[str(player_id_turn)])
+                if must_move_agent:
+                    actions = actions[:-1]
                 
-                model.rewards.append(rewards)
-                pooled_rewards.append(rewards)
+                action_idx = np.argmax(actions)
+                
+                # attackOnLuxClone = copy.copy(attackOnLux)
+                # _, rewards_clone, _, _, _ = attackOnLuxClone.step(action_idx, player_id_turn, selectable_agents[agent_idx].id, selectable_agents)
 
-                if done:
-                    break
 
-                attackOnLux.render()
+                if len(selectable_agents) <= 1:
+                    # Must move, don't bother recomputing
+                    if action_idx == 11:
+                        model.rewards.append(-100)
+                    
+                    actions = actions[:-1]
+                    action_idx = np.argmax(actions)
+
+                    observations, rewards, done, _, _ = attackOnLux.step(action_idx, player_id_turn, selectable_agents[agent_idx].id, selectable_agents)
+
+                    attackOnLux.players[player_id_turn].enemy_agents = [agent for agent in attackOnLux.map.agents if agent.player != str(player_id_turn)]
+                    attackOnLux.players[player_id_turn].enemy_factories = [factory for factory in attackOnLux.map.factories if factory.player != str(player_id_turn)]
+
+                    if len(attackOnLux.players[player_id_turn].enemy_agents) == 0:
+                        rewards += 1000
+
+                    model.rewards.append(rewards)
+                    selected_agent = True
+                elif action_idx == 11:
+                    model.rewards.append(5)
+
+                    # selectable_agent_probs.append([agent_idx, actions, rewards_clone])
+
+                    agent_idx += 1
+
+                    if agent_idx >= len(selectable_agents):
+                    #     selectable_agent_probs = sorted(selectable_agent_probs, key=lambda x: x[1][-1])
+                    #     agent_idx = selectable_agent_probs[0][0] # agent with lowest probs of not being selected
+                        agent_idx -= 1
+                        must_move_agent = True
+                else:
+                    if len(selectable_agent_probs) > 0:
+                        best_agent = max(selectable_agent_probs, key = lambda x: x[2])
+                        if best_agent[0] == agent_idx:
+                            rewards += 50
+                        else:
+                            rewards -= 15
+
+                    
+                    observations, rewards, done, _, _ = attackOnLux.step(action_idx, player_id_turn, selectable_agents[agent_idx].id, selectable_agents)
+
+                    attackOnLux.players[player_id_turn].enemy_agents = [agent for agent in attackOnLux.map.agents if agent.player != str(player_id_turn)]
+                    attackOnLux.players[player_id_turn].enemy_factories = [factory for factory in attackOnLux.map.factories if factory.player != str(player_id_turn)]
+
+                    if len(attackOnLux.players[player_id_turn].enemy_agents) == 0:
+                        rewards += 1000
+
+                    model.rewards.append(rewards)
+                    selected_agent = True
+
+            if done:
+                break
+
+            attackOnLux.render()
         
-        model.update()
+        if keyboard.is_pressed(keyboard.KEY_UP):
+            time.sleep(0.15)
+
+    cumulative_moves.append(attackOnLux.players[0].moves * 2)
     
-    rewards_over_seeds.append(pooled_rewards)
+    if episode % 50 == 0:
+        print("RWD", sum(model.rewards[-10:]) / 10, "AVERAGE MOVES", sum(cumulative_moves) / len(cumulative_moves))
+        pygame.display.set_caption(f"RWDS {(sum(model.rewards[-10:]) / 10):.2f} MVS {(sum(cumulative_moves) / len(cumulative_moves)):.2f}")
+        cumulative_moves = []
+
+    model.update()
+
+    if episode % 1000 == 0:
+        print("saving model...")
+        torch.save(model, f"./models/{episode}_3.ckpt")
         
     
 rewards_to_plot = rewards_over_seeds

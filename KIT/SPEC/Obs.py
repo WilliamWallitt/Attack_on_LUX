@@ -16,11 +16,13 @@ class AttackOnLuxObsSpec:
             "worker_cargo_water": Box(0., float("inf"), shape=(1, size, size)),
             "worker_health": Box(0., float("inf"), shape=(1, size, size)),
             "enemy_worker": MultiBinary((1, size, size)),
+            "selectable_worker": Box(0., float("inf"), shape=(1, size, size)),
 
             "warrior": MultiBinary((1, size, size)),
             "warrior_cargo_water": Box(0., float("inf"), shape=(1, size, size)),
             "warrior_health": Box(0., float("inf"), shape=(1, size, size)),
             "enemy_warrior": MultiBinary((1, size, size)),
+            "selectable_warrior": Box(0., float("inf"), shape=(1, size, size)),
 
             "factory": MultiBinary((1, size, size)),
             "factory_cargo_spice": Box(0., float("inf"), shape=(1, size, size)),

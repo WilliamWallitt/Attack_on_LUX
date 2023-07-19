@@ -4,6 +4,7 @@ import numpy as np
 
 from KIT.CLASSES.Resource import ResourceType
 from KIT.CLASSES.Unit import UnitStats, UnitHealth, UnitType, Unit, produce_worker_unit, produce_warrior_unit
+import random
 import uuid
 
 
@@ -38,13 +39,25 @@ class Factory:
                     else:
                         return produce_worker_unit(self.player, np.array([i, j]), self.size)
         return None
+    
+    def attack(self, unit):
+        if isinstance(unit, Unit):
+            if np.array_equal(unit.position, self.position):
+                # Calculate damage dealt by the attacker, including a random dice roll
+                dice_roll = random.randint(1, 6)
+                damage = max(0, unit.stats["attack"] + dice_roll - self.stats["defence"])
+                self.health["amount"] -= damage
+
+                if self.health["amount"] < 0:
+                    self.health["alive"] = False
+                    self.health["amount"] = 0
 
 
 def create_factory(player: str, position: np.array, map_size: int) -> Factory:
     return Factory(
         player=player,
         stats={"attack": 0, "defence": 50},
-        health={"amount": 200, "decay": 2, "type": ResourceType.SPICE, "alive": True},
+        health={"amount": 200, "decay": 0, "type": ResourceType.SPICE, "alive": True},
         position=position,
         map_size=map_size
     )

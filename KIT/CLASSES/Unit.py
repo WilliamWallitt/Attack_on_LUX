@@ -45,7 +45,7 @@ class ProduceUnit(TypedDict):
 class Unit:
     def __init__(self, player: str, stats: UnitStats, health: UnitHealth, position: np.array,
                  mining_options: List[UnitResource], size: int, unit_type: UnitType = UnitType.WORKER):
-        self.id = uuid.uuid4()
+        self.id = uuid.uuid4().hex
         self.player = player
         self.stats = stats
         self.unit_type = unit_type
@@ -109,8 +109,8 @@ def produce_worker_unit(player: str, position: np.array, size) -> Unit:
         health={"amount": 100, "decay": 1, "type": ResourceType.WATER, "alive": True},
         position=position,
         mining_options=[
-            {"type": ResourceType.SPICE, "amount": 0, "mine_per_turn": 2},
-            {"type": ResourceType.WATER, "amount": 0, "mine_per_turn": 6}
+            {"type": ResourceType.SPICE, "amount": 0, "mine_per_turn": 4},
+            {"type": ResourceType.WATER, "amount": 0, "mine_per_turn": 12}
         ],
         size=size
     )
@@ -120,10 +120,10 @@ def produce_warrior_unit(player: str, position: np.array, size) -> Unit:
     return Unit(
         player=player,
         stats={"attack": 6, "defence": 5},
-        health={"amount": 100, "decay": 2, "type": ResourceType.WATER, "alive": True},
+        health={"amount": 100, "decay": 1, "type": ResourceType.WATER, "alive": True},
         position=position,
         mining_options=[
-            {"type": ResourceType.WATER, "amount": 0, "mine_per_turn": 6}
+            {"type": ResourceType.WATER, "amount": 0, "mine_per_turn": 12}
         ],
         size=size
     )
