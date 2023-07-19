@@ -95,9 +95,6 @@ class AttackOnLux(gym.Env):
         # # Finally, add some gridlines
         for row in range(grid_height):
             for col in range(grid_width):
-
-
-
                 rect = pygame.Rect(col * cell_size, row * cell_size, cell_size, cell_size)
                 pygame.draw.rect(canvas, colors["FACTORY"], rect)
 
