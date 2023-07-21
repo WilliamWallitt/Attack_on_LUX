@@ -4,6 +4,7 @@ import numpy as np
 import pygame
 from gym import spaces
 from gym.spaces import Box, Dict, Discrete, MultiBinary, MultiDiscrete
+from torch.nn.functional import softmax
 
 from KIT.CLASSES.Map import Map
 import gym
@@ -16,13 +17,39 @@ import torch.nn as nn
 import pygame
 import time
 import torch
-from torch.distributions.normal import Normal
+from torch.distributions import Categorical
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 import copy
 import keyboard
 import torch.nn.functional as F
+import wandb
+
+# hparams
+LEARNING_RATE = 1e-8  # Learning rate for policy optimization
+GAMMA = 0.99  # Discount factor
+EPS = 1e-4  # small number for mathematical stability
+TOTAL_EPISODES = 100000
+NUM_OBSERVATIONS = 14
+NUM_ACTIONS = 11
+NUM_PLAYERS = 2
+SIZE = 8
+
+wandb.init(
+    project="Attack_on_LUX",
+    config={
+        "learning_rate": LEARNING_RATE,
+        "gamma": GAMMA,
+        "eps": EPS,
+        "num_actions": NUM_ACTIONS,
+        "num_observations": NUM_OBSERVATIONS,
+        "num_players": NUM_PLAYERS,
+        "size": SIZE,
+        "architecture": "CNN",
+        "total_episodes": TOTAL_EPISODES,
+    }
+)
 
 # action space
 '''
@@ -32,20 +59,22 @@ transfer,
 produce worker, produce warrior,
 attack unit,
 create factory,
-select_next_agent
-] -> 12 actions
+] -> 11 actions
 
 '''
+
+def _normalize_array(x: np.ndarray) -> np.ndarray:
+    return (x - np.min(x)) / (np.max(x) - np.min(x))
 
 
 class AttackOnLux(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, size: int, num_agents: int, render_mode=None):
+    def __init__(self, size: int, num_agents: int, num_actions: int, render_mode=None):
         self.map = None
         self.size = size
         self.num_agents = num_agents
-        self.num_actions = 12
+        self.num_actions = num_actions
         self.players = []
         self.window_size = 800  # The size of the PyGame window
         self.scale = 35
@@ -98,10 +127,16 @@ class AttackOnLux(gym.Env):
                 factory_surface = self.factory_red_surface
             
             for agent in player.agents:
+                if not agent.health["alive"]:
+                    continue
+                    
                 x, y = agent.position[0], agent.position[1]
                 self.display_surface.blit(unit_surface, (x * self.scale, y * self.scale))
             
             for agent in player.factories:
+                if not agent.health["alive"]:
+                    continue
+
                 x, y = agent.position[0], agent.position[1]
                 self.display_surface.blit(factory_surface, (x * self.scale, y * self.scale))
             
@@ -114,25 +149,18 @@ class AttackOnLux(gym.Env):
         pygame.event.pump()
         pygame.display.update()
 
-    def step(self, action_idx, player_id: int, agent_id: int, selectable_agents=[]):
-        done = False
-        rewards, agent_done = self.players[player_id].execute_actions(action_idx, agent_id)
-        done = done or agent_done
-        # if self.turn > 50:
-        #     done = True
+    def step(self):
         self.turn += 1
 
         for resource in self.map.resources:
             resource.step()
-
-        return self.get_observations(player_id, agent_id, selectable_agents), rewards, done, False, {}
 
     def close(self):
         if self.window is not None:
             pygame.display.quit()
             pygame.quit()
 
-    def get_observations(self, player_id: int, agent_id: Optional[str] = None, selectable_agents=[]):
+    def get_observations(self, player_id: int, agent_id: Optional[str] = None):
         observations = {
             key: val.copy() #if val.ndim == 3 else val[:, :, :self.size, :self.size].copy() * 0
             for key, val in self.observation_space.sample().items()
@@ -143,14 +171,12 @@ class AttackOnLux(gym.Env):
 
         # TODO custom features for each agent???
 
+        observations["worker_cargo_water"][0, x, y]
+
         player_observation = self.players[player_id].get_observation()
         for agent in player_observation[str(player_id)]["worker"]:
             x, y = agent["position"][0], agent["position"][1]
             observations["worker"][0, x, y] = 1
-
-            for i, selectable_agent in enumerate(selectable_agents):
-                if agent["id"] == selectable_agent.id:
-                    observations["selectable_worker"][0, x, y] = i
 
             spice = next((item for item in agent["mining_options"] if item['type'] == ResourceType.SPICE), None)
             water = next((item for item in agent["mining_options"] if item['type'] == ResourceType.WATER), None)
@@ -178,10 +204,6 @@ class AttackOnLux(gym.Env):
 
             observations["warrior"][0, x, y] = 1
 
-            for i, selectable_agent in enumerate(selectable_agents):
-                if agent["id"] == selectable_agent.id:
-                    observations["selectable_warrior"][0, x, y] = i
-
             water = next((item for item in agent["mining_options"] if item['type'] == ResourceType.WATER), None)
             health = agent["health"]["amount"]
 
@@ -208,8 +230,6 @@ class AttackOnLux(gym.Env):
 
             spice = factory["health"]["amount"]
 
-            observations["factory_cargo_spice"][0, x, y] \
-                = spice
             observations["factory_health"][0, x, y] \
                 = spice
 
@@ -226,10 +246,21 @@ class AttackOnLux(gym.Env):
             if resource.resource_type == ResourceType.EMPTY:
                 observations["empty"][0, resource.position[0], resource.position[1]] \
                     = resource.amount
+        
+        # Normalize features?
+        observations["worker_cargo_spice"] = _normalize_array(observations["worker_cargo_spice"])
+        observations["worker_cargo_water"] = _normalize_array(observations["worker_cargo_water"])
+        observations["worker_health"] = _normalize_array(observations["worker_health"])
+        observations["warrior_cargo_water"] = _normalize_array(observations["warrior_cargo_water"])
+        observations["warrior_health"] = _normalize_array(observations["warrior_health"])
+        observations["factory_health"] = _normalize_array(observations["factory_health"])
+        observations["water"] = _normalize_array(observations["water"])
+        observations["spice"] = _normalize_array(observations["spice"])
+        observations["empty"] = _normalize_array(observations["empty"])
 
         return observations
 
-    def reset(self, player_id: int = 0, agent_id: Optional[str] = None, selectable_agents=[]):
+    def reset(self, player_id: int = 0, agent_id: Optional[str] = None):
         self.map = Map(size=self.size, num_agents=self.num_agents)
         self.players = [
             Player(
@@ -239,8 +270,9 @@ class AttackOnLux(gym.Env):
                 enemy_factories=[factory for factory in self.map.factories if factory.player != str(player_id)],
                 player_id=str(player_id), resources=self.map.resources, map_size=self.size,
                 num_actions=self.num_actions)
-            for player_id in range(self.num_agents)]
-        return self.get_observations(player_id, agent_id, selectable_agents)
+            for player_id in range(self.num_agents)
+        ]
+        return self.get_observations(player_id, agent_id)
 
 class REINFORCE:
     """REINFORCE algorithm."""
@@ -255,9 +287,9 @@ class REINFORCE:
         """
 
         # Hyperparameters
-        self.learning_rate = 1e-5  # Learning rate for policy optimization
-        self.gamma = 0.8  # Discount factor
-        self.eps = 1e-6  # small number for mathematical stability
+        self.learning_rate = LEARNING_RATE  # Learning rate for policy optimization
+        self.gamma = GAMMA  # Discount factor
+        self.eps = EPS  # small number for mathematical stability
 
         self.probs = []  # Stores probability values of the sampled action
         self.rewards = []  # Stores the corresponding rewards
@@ -265,31 +297,44 @@ class REINFORCE:
         self.net = Policy_Network(obs_space_dims, action_space_dims)
         self.optimizer = torch.optim.AdamW(self.net.parameters(), lr=self.learning_rate)
 
-    def sample_action(self, state: np.ndarray) -> float:
-        """Returns an action, conditioned on the policy and observation.
+    # def sample_action(self, state: np.ndarray) -> float:
+    #     """Returns an action, conditioned on the policy and observation.
 
-        Args:
-            state: Observation from the environment
+    #     Args:
+    #         state: Observation from the environment
 
-        Returns:
-            action: Action to be performed
-        """
-        state = torch.tensor(np.array([state]))
-        action_means, action_stddevs = self.net(state)
+    #     Returns:
+    #         action: Action to be performed
+    #     """
+    #     state = torch.tensor(np.array([state]))
+    #     action_means, action_stddevs = self.net(state)
 
-        # create a normal distribution from the predicted
-        #   mean and standard deviation and sample an action
-        distrib = Normal(action_means[0] + self.eps, action_stddevs[0] + self.eps)
-        action = distrib.sample()
-        prob = distrib.log_prob(action)
+    #     # create a normal distribution from the predicted
+    #     #   mean and standard deviation and sample an action
+    #     distrib = Normal(action_means[0] + self.eps, action_stddevs[0] + self.eps)
+    #     action = distrib.sample()
+    #     prob = distrib.log_prob(action)
 
-        action = action.cpu().numpy()
+    #     action = action.cpu().numpy()
 
-        self.probs.append(prob)
+    #     self.probs.append(prob)
 
-        return action
+    #     return action
+    
+    def sample_action(self, state: np.ndarray) -> tuple:
+        # Sample an action based on the action probabilities
+        state = torch.from_numpy(np.array([state]))
+        action_probs = self.net(state)
+        m = Categorical(action_probs)
 
-    def update(self):
+        action = m.sample()
+        log_prob = m.log_prob(action)
+
+        self.probs.append(log_prob)
+        
+        return action.item(), log_prob
+
+    def update(self) -> float:
         """Updates the policy network's weights."""
         running_g = 0
         gs = []
@@ -301,19 +346,20 @@ class REINFORCE:
 
         deltas = torch.tensor(gs)
 
-        loss = 0
-        # minimize -1 * prob * reward obtained
+        policy_loss = []
         for log_prob, delta in zip(self.probs, deltas):
-            loss += log_prob.mean() * delta * (-1)
+            policy_loss.append(-log_prob * delta)  # negative sign for gradient ascent
 
-        # Update the policy network
         self.optimizer.zero_grad()
-        loss.backward()
+        policy_loss = torch.sum(torch.stack(policy_loss))  # used stack instead of cat
+        policy_loss.backward()
         self.optimizer.step()
-
+        
         # Empty / zero out all episode-centric/related variables
         self.probs = []
         self.rewards = []
+
+        return policy_loss.item()
 
 class Policy_Network(nn.Module):
     """Parametrized Policy Network."""
@@ -330,11 +376,14 @@ class Policy_Network(nn.Module):
 
         self.conv1 = nn.Conv2d(obs_space_dims, 32, kernel_size=3, stride=1, padding=1)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
+        self.conv3 = nn.Conv2d(64, 20, kernel_size=1, stride=1)
         
-        self.fc = nn.Linear(128*8*8, 512)  # flattening output of conv layers
-        self.policy_mean_net = nn.Linear(512, action_space_dims)
-        self.policy_stddev_net = nn.Linear(512, action_space_dims)
+        self.fc = nn.Linear(20*SIZE*SIZE, 256)  # flattening output of conv layers
+        self.fc_1 = nn.Linear(256, 128)
+        self.fc_2 = nn.Linear(128, 64)
+
+        self.policy_mean_net = nn.Linear(64, action_space_dims)
+        self.policy_stddev_net = nn.Linear(64, action_space_dims)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Conditioned on the observation, returns the mean and standard deviation
@@ -353,154 +402,125 @@ class Policy_Network(nn.Module):
         
         x = x.view(x.size()[0], -1)  # flattening
         x = F.relu(self.fc(x))
+        x = F.relu(self.fc_1(x))
+        x = F.relu(self.fc_2(x))
         
         action_means = self.policy_mean_net(x)
-        action_stddevs = torch.log(1 + torch.exp(self.policy_stddev_net(x)))
+        # action_stddevs = torch.log(1 + torch.exp(self.policy_stddev_net(x)))
 
-        return action_means, action_stddevs
+        action_probs = softmax(action_means, dim=-1)
+
+        # return action_means, action_stddevs
+
+        return action_probs
 
 
-attackOnLux = AttackOnLux(render_mode="human", size=8, num_agents=2)
+attackOnLux = AttackOnLux(size=SIZE, num_agents=NUM_PLAYERS, num_actions=NUM_ACTIONS)
 attackOnLux.init()
 observations = attackOnLux.reset(player_id=0, agent_id=None)
 done = False
 
-total_num_episodes = 100000  # Total number of episodes
-# Observation-space of InvertedPendulum-v4 (4)
-#obs_space_dims = attackOnLux.observation_space.shape[0]
-# Action-space of InvertedPendulum-v4 (1)
-#action_space_dims = attackOnLux.action_space.shape[0]
-rewards_over_seeds = []
 
-# set seed
-# torch.manual_seed(seed)
-# random.seed(seed)
-# np.random.seed(seed)
+model = torch.load("models/9000_cnn_1.ckpt") #REINFORCE(NUM_OBSERVATIONS, NUM_ACTIONS)
 
-# Reinitialize model every seed
-model = REINFORCE(17, 12)
-#neg_model = REINFORCE(64*15, 11)
-cumulative_moves = []
-
-for episode in range(total_num_episodes):
-    # gymnasium v26 requires users to set seed while resetting the environment
-
-    observations = None
+for episode in range(TOTAL_EPISODES):
     has_reset = False
     done = False
-    
 
     while not done:
         for player_id_turn in range(attackOnLux.num_agents):
-            selected_agent = False
-            must_move_agent = False
-            selectable_agents = attackOnLux.players[player_id_turn].agents
-            selectable_agent_probs = []
-            agent_idx = 0
+            for i, p in enumerate(attackOnLux.players):
+                done = p.is_game_over()
 
-            attackOnLux.players[player_id_turn].enemy_agents = [agent for agent in attackOnLux.map.agents if agent.player != str(player_id_turn)]
-            attackOnLux.players[player_id_turn].enemy_factories = [factory for factory in attackOnLux.map.factories if factory.player != str(player_id_turn)]
+                if done and i == player_id_turn and len(model.rewards) > 0:
+                    model.rewards[-1] += 100
+                elif done and len(model.rewards) > 0:
+                    model.rewards[-1] -= 100
             
-            random.shuffle(selectable_agents) # remove bias
-
-            while not selected_agent and len(selectable_agents) > 0:
+            start_idx = len(model.rewards)
+            
+            for agent in attackOnLux.players[player_id_turn].agents:
+                # Update friendly+enemy agents before move.
                 if not has_reset:
-                    observations = attackOnLux.reset(player_id=player_id_turn, agent_id=None, selectable_agents=selectable_agents)
+                    observations = attackOnLux.reset(player_id=player_id_turn, agent_id=agent.id)
                     has_reset = True
                 else:
-                    observations = attackOnLux.get_observations(player_id=player_id_turn, agent_id=selectable_agents[agent_idx].id, selectable_agents=selectable_agents)
+                    attackOnLux.players[player_id_turn].enemy_agents = [agent for agent in attackOnLux.map.agents if agent.player != str(player_id_turn)]
+                    attackOnLux.players[player_id_turn].enemy_factories = [factory for factory in attackOnLux.map.factories if factory.player != str(player_id_turn)]
+
+                    observations = attackOnLux.get_observations(player_id=player_id_turn, agent_id=agent.id)
                 
                 np_observations = np.concatenate([x for x in observations.values()], axis=0)
 
-                actions = model.sample_action(np_observations)
-                actions = np.exp(actions) / np.exp(actions).sum() # softmax
+                action_idx = model.sample_action(np_observations)[0]
 
-                if must_move_agent:
-                    actions = actions[:-1]
+                rewards, done = attackOnLux.players[player_id_turn].execute_actions(action_idx, agent)
+
+                attackOnLux.players[player_id_turn].enemy_agents = [agent for agent in attackOnLux.map.agents if agent.player != str(player_id_turn)]
+                attackOnLux.players[player_id_turn].enemy_factories = [factory for factory in attackOnLux.map.factories if factory.player != str(player_id_turn)]
+
+                if len(attackOnLux.players[player_id_turn].enemy_agents) == 0:
+                    rewards += 100 # Win reward (loss penalty is on execute_actions)
+                    done = True
+
+                model.rewards.append(rewards)
+
+                new_map_agents = []
+                new_map_factories = []
+
+                for player in attackOnLux.players:
+                    new_map_agents.extend(player.agents)
+                    new_map_factories.extend(player.factories)
                 
-                action_idx = np.argmax(actions)
-                
-                # attackOnLuxClone = copy.copy(attackOnLux)
-                # _, rewards_clone, _, _, _ = attackOnLuxClone.step(action_idx, player_id_turn, selectable_agents[agent_idx].id, selectable_agents)
+                attackOnLux.map.agents = new_map_agents
+                attackOnLux.map.factories = new_map_factories
 
+                if done:
+                    break
+            
+            end_idx = len(model.rewards)
+            
+            for agent in attackOnLux.players[player_id_turn].enemy_agents:
+                agent.step()
+            
+            for factory in attackOnLux.players[player_id_turn].factories:
+                was_alive = factory.health["alive"]
 
-                if len(selectable_agents) <= 1:
-                    # Must move, don't bother recomputing
-                    if action_idx == 11:
-                        model.rewards.append(-100)
-                    
-                    actions = actions[:-1]
-                    action_idx = np.argmax(actions)
+                factory.step()
 
-                    observations, rewards, done, _, _ = attackOnLux.step(action_idx, player_id_turn, selectable_agents[agent_idx].id, selectable_agents)
-
-                    attackOnLux.players[player_id_turn].enemy_agents = [agent for agent in attackOnLux.map.agents if agent.player != str(player_id_turn)]
-                    attackOnLux.players[player_id_turn].enemy_factories = [factory for factory in attackOnLux.map.factories if factory.player != str(player_id_turn)]
-
-                    if len(attackOnLux.players[player_id_turn].enemy_agents) == 0:
-                        rewards += 1000
-
-                    model.rewards.append(rewards)
-                    selected_agent = True
-                elif action_idx == 11:
-                    model.rewards.append(5)
-
-                    # selectable_agent_probs.append([agent_idx, actions, rewards_clone])
-
-                    agent_idx += 1
-
-                    if agent_idx >= len(selectable_agents):
-                    #     selectable_agent_probs = sorted(selectable_agent_probs, key=lambda x: x[1][-1])
-                    #     agent_idx = selectable_agent_probs[0][0] # agent with lowest probs of not being selected
-                        agent_idx -= 1
-                        must_move_agent = True
-                else:
-                    if len(selectable_agent_probs) > 0:
-                        best_agent = max(selectable_agent_probs, key = lambda x: x[2])
-                        if best_agent[0] == agent_idx:
-                            rewards += 50
-                        else:
-                            rewards -= 15
-
-                    
-                    observations, rewards, done, _, _ = attackOnLux.step(action_idx, player_id_turn, selectable_agents[agent_idx].id, selectable_agents)
-
-                    attackOnLux.players[player_id_turn].enemy_agents = [agent for agent in attackOnLux.map.agents if agent.player != str(player_id_turn)]
-                    attackOnLux.players[player_id_turn].enemy_factories = [factory for factory in attackOnLux.map.factories if factory.player != str(player_id_turn)]
-
-                    if len(attackOnLux.players[player_id_turn].enemy_agents) == 0:
-                        rewards += 1000
-
-                    model.rewards.append(rewards)
-                    selected_agent = True
+                if not factory.health["alive"] and was_alive:
+                    # 5 is the constant for factory breakage, apply to all cumulative moves
+                    factory_break_penalty = 5 / (end_idx - start_idx)
+                    for i in range(start_idx, end_idx):
+                        model.rewards[i] -= factory_break_penalty
+            
+            for factory in attackOnLux.players[player_id_turn].enemy_factories:
+                factory.step()
+            
+            attackOnLux.players[player_id_turn].agents = [agent for agent in attackOnLux.map.agents if agent.player == str(player_id_turn)]
+            attackOnLux.players[player_id_turn].factories = [factory for factory in attackOnLux.map.factories if factory.player == str(player_id_turn)]
+            
+            attackOnLux.step()
+            attackOnLux.render()
 
             if done:
                 break
-
-            attackOnLux.render()
         
         if keyboard.is_pressed(keyboard.KEY_UP):
             time.sleep(0.15)
-
-    cumulative_moves.append(attackOnLux.players[0].moves * 2)
     
-    if episode % 50 == 0:
-        print("RWD", sum(model.rewards[-10:]) / 10, "AVERAGE MOVES", sum(cumulative_moves) / len(cumulative_moves))
-        pygame.display.set_caption(f"RWDS {(sum(model.rewards[-10:]) / 10):.2f} MVS {(sum(cumulative_moves) / len(cumulative_moves)):.2f}")
-        cumulative_moves = []
+    avg_rewards = sum(model.rewards) / len(model.rewards)
+    game_length = len(model.rewards) # len(model.rewards) also represents number of moves
 
-    model.update()
+    loss_item = model.update()
 
-    if episode % 1000 == 0:
-        print("saving model...")
-        torch.save(model, f"./models/{episode}_3.ckpt")
-        
-    
-rewards_to_plot = rewards_over_seeds
-df1 = pd.DataFrame(rewards_to_plot).melt()
-df1.rename(columns={"variable": "episodes", "value": "reward"}, inplace=True)
-sns.set(style="darkgrid", context="talk", palette="rainbow")
-sns.lineplot(x="episodes", y="reward", data=df1).set(
-    title="REINFORCE for InvertedPendulum-v4"
-)
-plt.show()
+    wandb.log({
+        "episode": episode,
+        "avg_rewards": avg_rewards,
+        "game_length": game_length, 
+        "loss": loss_item
+    })
+
+    # if episode % 1000 == 0:
+    #     print("saving model...")
+    #     torch.save(model, f"./models/{episode}_cnn_1.ckpt")

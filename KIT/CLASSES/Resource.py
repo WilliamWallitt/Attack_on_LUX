@@ -14,15 +14,15 @@ class ResourceType(Enum):
 
 class Resource:
 
-    def __init__(self, *, position: np.ndarray, amount: int = 500, decay_per_turn: int = 1, max_respawn_tick: int = 250, resource_type: ResourceType = ResourceType.EMPTY):
+    def __init__(self, *, position: np.ndarray, amount: int = 500, max_respawn_tick: int = 100, resource_type: ResourceType = ResourceType.EMPTY):
         self.initial_amount = amount
         self.resource_type = resource_type
         self.amount = amount
-        self.decay_per_turn = decay_per_turn
+        self.decay_per_turn = random.randint(1, 5)
         self.max_respawn_tick = max_respawn_tick
         self.position = position
         self.id = uuid.uuid4()
-        self.respawn_tick = 0
+        self.respawn_tick = 0   
 
     def step(self):
         if self.respawn_tick is not None and self.respawn_tick > 0:

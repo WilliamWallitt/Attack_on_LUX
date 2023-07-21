@@ -61,15 +61,17 @@ class Unit:
             self.health["amount"] = 0
             self.health["alive"] = False
 
-    def mine(self, resource: Resource):
+    def mine(self, resource: Resource) -> int:
         for item in self.mining_options:
             if item['type'] == resource.resource_type and item is not None:
-                amount_minded = resource.mine(item["mine_per_turn"])
+                amount_mined = resource.mine(item["mine_per_turn"])
                 if item["type"] == self.health["type"]:
-                    self.health["amount"] += amount_minded
-                    item["amount"] += amount_minded
+                    self.health["amount"] += amount_mined
+                    item["amount"] += amount_mined
                 else:
-                    item["amount"] += amount_minded
+                    item["amount"] += amount_mined
+                return amount_mined
+        return 0
 
     def move(self, movement: int):
         # a[1] = direction (0 = center, 1 = up, 2 = right, 3 = down, 4 = left)
@@ -109,8 +111,8 @@ def produce_worker_unit(player: str, position: np.array, size) -> Unit:
         health={"amount": 100, "decay": 1, "type": ResourceType.WATER, "alive": True},
         position=position,
         mining_options=[
-            {"type": ResourceType.SPICE, "amount": 0, "mine_per_turn": 4},
-            {"type": ResourceType.WATER, "amount": 0, "mine_per_turn": 12}
+            {"type": ResourceType.SPICE, "amount": 0, "mine_per_turn": 2},
+            {"type": ResourceType.WATER, "amount": 0, "mine_per_turn": 6}
         ],
         size=size
     )
@@ -119,11 +121,11 @@ def produce_worker_unit(player: str, position: np.array, size) -> Unit:
 def produce_warrior_unit(player: str, position: np.array, size) -> Unit:
     return Unit(
         player=player,
-        stats={"attack": 6, "defence": 5},
+        stats={"attack": 20, "defence": 5},
         health={"amount": 100, "decay": 1, "type": ResourceType.WATER, "alive": True},
         position=position,
         mining_options=[
-            {"type": ResourceType.WATER, "amount": 0, "mine_per_turn": 12}
+            {"type": ResourceType.WATER, "amount": 0, "mine_per_turn": 6}
         ],
         size=size
     )

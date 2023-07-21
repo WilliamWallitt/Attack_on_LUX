@@ -56,8 +56,8 @@ class Factory:
 def create_factory(player: str, position: np.array, map_size: int) -> Factory:
     return Factory(
         player=player,
-        stats={"attack": 0, "defence": 50},
-        health={"amount": 200, "decay": 0, "type": ResourceType.SPICE, "alive": True},
+        stats={"attack": 0, "defence": 15},
+        health={"amount": 250, "decay": 1, "type": ResourceType.SPICE, "alive": True},
         position=position,
         map_size=map_size
     )
