@@ -11,6 +11,8 @@ class AttackOnLuxObsSpec:
     @staticmethod
     def get_obs_spec(num_agents: int, size: int) -> Dict:
         return Dict({
+            "current_agent": MultiBinary((1, size, size)),
+
             "worker": MultiBinary((1, size, size)),
             "worker_cargo_spice": Box(0., 1., shape=(1, size, size)),
             "worker_cargo_water": Box(0., 1., shape=(1, size, size)),
@@ -25,9 +27,6 @@ class AttackOnLuxObsSpec:
             "factory": MultiBinary((1, size, size)),
             "factory_health": Box(0., 1., shape=(1, size, size)),
 
-            "map_borders": MultiBinary((1, size, size)),
-            "legal_moves": MultiBinary((1, size, size)),
-            
             "water": Box(0., 1., shape=(1, size, size)),
             "spice": Box(0., 1., shape=(1, size, size)),
             "empty": Box(0., 1., shape=(1, size, size)),

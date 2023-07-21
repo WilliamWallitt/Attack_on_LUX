@@ -60,33 +60,34 @@ class Player:
             previous_position = agent.position
             agent.move(action_idx)
 
-            # if np.array_equal(agent.position, previous_position):
-            #     rewards -= 5
+            if np.array_equal(agent.position, previous_position):
+                rewards -= 5
             # else:
             #     rewards += 0.1
-            # if agent.health["amount"] < 20:
-            #     rewards -= 5
+            if agent.health["amount"] < 20:
+                rewards -= 5
         if action_idx == 5:
             resource = self.__get_resource(agent)
             if resource is not None and resource.resource_type in (ResourceType.SPICE, ResourceType.WATER):
                 print(f"agent {agent.id} mining resource {resource.id} of type {resource.resource_type.name}")
                 amount_mined = agent.mine(resource)
-            # else:
-            #     rewards -= 1
+                rewards += 0.1
+            else:
+                rewards -= 1
         if action_idx == 6:
             factory = self.__get_factory(agent)
             if factory is not None:
                 print(f"agent {agent.id} transferring resource to factory {factory.id}")
-                # for item in agent.mining_options:
-                    # if item["type"] == ResourceType.SPICE and item["amount"] > 0:
-                    #     rewards += 5
-                    #     break
-                    # elif item["type"] == ResourceType.SPICE:
-                    #     rewards -=  1
-                    #     break
+                for item in agent.mining_options:
+                    if item["type"] == ResourceType.SPICE and item["amount"] > 0:
+                        rewards += 5
+                        break
+                    elif item["type"] == ResourceType.SPICE:
+                        rewards -=  1
+                        break
                 agent.transfer(factory)
-            # else:
-            #     rewards -= 1
+            else:
+                rewards -= 1
         if action_idx == 7:
             factory = self.__get_factory(agent)
             if factory is not None:
@@ -94,9 +95,9 @@ class Player:
                 new_worker = factory.produce_unit(UnitType.WORKER)
                 if new_worker is not None:
                     self.agents.append(new_worker)
-                    # rewards += 5
-            # else:
-            #     rewards -= 1
+                    rewards += 5
+            else:
+                rewards -= 1
         if action_idx == 8:
             factory = self.__get_factory(agent)
             if factory is not None:
@@ -105,9 +106,9 @@ class Player:
 
                 if new_warrior is not None:
                     self.agents.append(new_warrior)
-            #         rewards += 5
-            # else:
-            #     rewards -= 1
+                    rewards += 5
+            else:
+                rewards -= 1
         if action_idx == 9:
             enemy_agent = self.__get_enemy_agent(agent)
 
@@ -119,15 +120,15 @@ class Player:
             if enemy_agent is not None:
                 print(f"agent {agent.id} attacking enemy agent {enemy_agent.id}")
                 enemy_agent.attack(agent)
-                # rewards += 2
+                rewards += 2
 
                 print("HIT", "FACTORY" if factory else "UNIT")
 
                 if not enemy_agent.health["alive"]:
                     print("MURDER", "FACTORY" if factory else "UNIT")
-                    # rewards += 5
-            # else:
-            #     rewards -= 1 
+                    rewards += 5
+            else:
+                rewards -= 1 
         if action_idx == 10:
             factory = self.__get_factory(agent)
             enemy_agent = self.__get_enemy_agent(agent)
@@ -150,16 +151,16 @@ class Player:
 
         agent.step()
 
-        # if not agent.health["alive"] and was_alive:
-        #     rewards -= 5
+        if not agent.health["alive"] and was_alive:
+            rewards -= 5
 
         # we don't update until th
         
-        # self.agents = [agent for agent in self.agents if agent.health["alive"]]
-        # self.factories = [factory for factory in self.factories if factory.health["alive"]]
+        self.agents = [agent for agent in self.agents if agent.health["alive"]]
+        self.factories = [factory for factory in self.factories if factory.health["alive"]]
         
         # rewards += self.moves
-        # self.moves += 1
+        self.moves += 1
 
         done = self.is_game_over()
         if done:
@@ -196,8 +197,6 @@ class Player:
             'stats': x.stats,
             'health': x.health
         } for x in self.factories]
-
-        obs[self.player]['legal_moves'] = 
 
         return obs
 

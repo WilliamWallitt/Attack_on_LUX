@@ -31,7 +31,7 @@ LEARNING_RATE = 1e-8  # Learning rate for policy optimization
 GAMMA = 0.99  # Discount factor
 EPS = 1e-4  # small number for mathematical stability
 TOTAL_EPISODES = 100000
-NUM_OBSERVATIONS = 14
+NUM_OBSERVATIONS = 15
 NUM_ACTIONS = 11
 NUM_PLAYERS = 2
 SIZE = 8
@@ -171,12 +171,13 @@ class AttackOnLux(gym.Env):
 
         # TODO custom features for each agent???
 
-        observations["worker_cargo_water"][0, x, y]
-
         player_observation = self.players[player_id].get_observation()
         for agent in player_observation[str(player_id)]["worker"]:
             x, y = agent["position"][0], agent["position"][1]
             observations["worker"][0, x, y] = 1
+
+            if agent["id"] == agent_id:
+                observations["current_agent"][0, x, y] = 1
 
             spice = next((item for item in agent["mining_options"] if item['type'] == ResourceType.SPICE), None)
             water = next((item for item in agent["mining_options"] if item['type'] == ResourceType.WATER), None)
@@ -203,6 +204,9 @@ class AttackOnLux(gym.Env):
             x, y = agent["position"][0], agent["position"][1]
 
             observations["warrior"][0, x, y] = 1
+            
+            if agent["id"] == agent_id:
+                observations["current_agent"][0, x, y] = 1
 
             water = next((item for item in agent["mining_options"] if item['type'] == ResourceType.WATER), None)
             health = agent["health"]["amount"]
@@ -293,6 +297,7 @@ class REINFORCE:
 
         self.probs = []  # Stores probability values of the sampled action
         self.rewards = []  # Stores the corresponding rewards
+        self.max_turns = 10000
 
         self.net = Policy_Network(obs_space_dims, action_space_dims)
         self.optimizer = torch.optim.AdamW(self.net.parameters(), lr=self.learning_rate)
@@ -321,12 +326,16 @@ class REINFORCE:
 
     #     return action
     
-    def sample_action(self, state: np.ndarray) -> tuple:
+    def sample_action(self, state: np.ndarray, num_turns: int) -> tuple:
         # Sample an action based on the action probabilities
         state = torch.from_numpy(np.array([state]))
-        action_probs = self.net(state)
-        m = Categorical(action_probs)
 
+        num_turns = min(num_turns, self.max_turns - 1)
+        num_turns = torch.tensor(num_turns)
+
+        action_probs = self.net(state, num_turns)
+       
+        m = Categorical(action_probs)
         action = m.sample()
         log_prob = m.log_prob(action)
 
@@ -361,33 +370,92 @@ class REINFORCE:
 
         return policy_loss.item()
 
+# class Policy_Network(nn.Module):
+#     """Parametrized Policy Network."""
+
+#     def __init__(self, obs_space_dims: int, action_space_dims: int):
+#         """Initializes a neural network that estimates the mean and standard deviation
+#          of a normal distribution from which an action is sampled from.
+
+#         Args:
+#             obs_space_dims: Dimension of the observation space
+#             action_space_dims: Dimension of the action space
+#         """
+#         super().__init__()
+
+#         self.conv1 = nn.Conv2d(obs_space_dims, 32, kernel_size=3, stride=1, padding=1)
+#         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+#         self.conv3 = nn.Conv2d(64, 20, kernel_size=1, stride=1)
+        
+#         self.fc = nn.Linear(20*SIZE*SIZE, 256)  # flattening output of conv layers
+#         self.fc_1 = nn.Linear(256, 128)
+#         self.fc_2 = nn.Linear(128, 64)
+
+#         self.policy_mean_net = nn.Linear(64, action_space_dims)
+#         self.policy_stddev_net = nn.Linear(64, action_space_dims)
+
+#     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+#         """Conditioned on the observation, returns the mean and standard deviation
+#          of a normal distribution from which an action is sampled from.
+
+#         Args:
+#             x: Observation from the environment
+
+#         Returns:
+#             action_means: predicted mean of the normal distribution
+#             action_stddevs: predicted standard deviation of the normal distribution
+#         """
+#         x = F.relu(self.conv1(x.float()))
+#         x = F.relu(self.conv2(x))
+#         x = F.relu(self.conv3(x))
+        
+#         x = x.view(x.size()[0], -1)  # flattening
+#         x = F.relu(self.fc(x))
+#         x = F.relu(self.fc_1(x))
+#         x = F.relu(self.fc_2(x))
+        
+#         action_means = self.policy_mean_net(x)
+#         # action_stddevs = torch.log(1 + torch.exp(self.policy_stddev_net(x)))
+
+#         action_probs = softmax(action_means, dim=-1)
+
+#         # return action_means, action_stddevs
+
+#         return action_probs
+
 class Policy_Network(nn.Module):
     """Parametrized Policy Network."""
 
     def __init__(self, obs_space_dims: int, action_space_dims: int):
         """Initializes a neural network that estimates the mean and standard deviation
-         of a normal distribution from which an action is sampled from.
+        from which an action is sampled from.
 
         Args:
             obs_space_dims: Dimension of the observation space
             action_space_dims: Dimension of the action space
         """
         super().__init__()
+        self.obs_space_dims = obs_space_dims
 
-        self.conv1 = nn.Conv2d(obs_space_dims, 32, kernel_size=3, stride=1, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
-        self.conv3 = nn.Conv2d(64, 20, kernel_size=1, stride=1)
+        self.transformer_encoder = nn.TransformerEncoder(
+            encoder_layer=nn.TransformerEncoderLayer(d_model=obs_space_dims * SIZE * SIZE, nhead=4),
+            num_layers=2
+        )
+
+        self.max_turns = 10000
+        self.position_emb = nn.Embedding(SIZE * SIZE, obs_space_dims)
+        self.time_embedding = nn.Embedding(self.max_turns, obs_space_dims * SIZE * SIZE)
         
-        self.fc = nn.Linear(20*SIZE*SIZE, 256)  # flattening output of conv layers
+        self.fc = nn.Linear(obs_space_dims * SIZE * SIZE, 256)  # flattening output of transformer encoder
         self.fc_1 = nn.Linear(256, 128)
         self.fc_2 = nn.Linear(128, 64)
 
         self.policy_mean_net = nn.Linear(64, action_space_dims)
-        self.policy_stddev_net = nn.Linear(64, action_space_dims)
+        # self.policy_stddev_net = nn.Linear(64, action_space_dims)
 
-    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """Conditioned on the observation, returns the mean and standard deviation
-         of a normal distribution from which an action is sampled from.
+    def forward(self, x: torch.Tensor, num_turns: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Returns the mean and standard deviation from which an action is sampled from,
+        conditioned on the observation.
 
         Args:
             x: Observation from the environment
@@ -396,21 +464,25 @@ class Policy_Network(nn.Module):
             action_means: predicted mean of the normal distribution
             action_stddevs: predicted standard deviation of the normal distribution
         """
-        x = F.relu(self.conv1(x.float()))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
-        
-        x = x.view(x.size()[0], -1)  # flattening
+        x = x.view(-1, self.obs_space_dims * SIZE * SIZE)  # flattening
+
+        # guard against going out of bounds
+        time_emb = self.time_embedding(num_turns.unsqueeze(0))  # add time dimension
+
+        positions = torch.arange(0, SIZE * SIZE).unsqueeze(0)
+        pos_embed = self.position_emb(positions)
+        pos_embed = pos_embed.view(-1, self.obs_space_dims * SIZE * SIZE)
+
+        x += pos_embed  # Add positional embeddings
+        x += time_emb
+        x = self.transformer_encoder(x)
+
         x = F.relu(self.fc(x))
         x = F.relu(self.fc_1(x))
         x = F.relu(self.fc_2(x))
-        
+
         action_means = self.policy_mean_net(x)
-        # action_stddevs = torch.log(1 + torch.exp(self.policy_stddev_net(x)))
-
         action_probs = softmax(action_means, dim=-1)
-
-        # return action_means, action_stddevs
 
         return action_probs
 
@@ -421,11 +493,12 @@ observations = attackOnLux.reset(player_id=0, agent_id=None)
 done = False
 
 
-model = torch.load("models/9000_cnn_1.ckpt") #REINFORCE(NUM_OBSERVATIONS, NUM_ACTIONS)
+model = REINFORCE(NUM_OBSERVATIONS, NUM_ACTIONS)
 
 for episode in range(TOTAL_EPISODES):
     has_reset = False
     done = False
+    turns = 0
 
     while not done:
         for player_id_turn in range(attackOnLux.num_agents):
@@ -438,6 +511,9 @@ for episode in range(TOTAL_EPISODES):
                     model.rewards[-1] -= 100
             
             start_idx = len(model.rewards)
+
+            if len(attackOnLux.players[player_id_turn].agents) == 0:
+                continue
             
             for agent in attackOnLux.players[player_id_turn].agents:
                 # Update friendly+enemy agents before move.
@@ -452,7 +528,7 @@ for episode in range(TOTAL_EPISODES):
                 
                 np_observations = np.concatenate([x for x in observations.values()], axis=0)
 
-                action_idx = model.sample_action(np_observations)[0]
+                action_idx = model.sample_action(np_observations, turns)[0]
 
                 rewards, done = attackOnLux.players[player_id_turn].execute_actions(action_idx, agent)
 
@@ -509,17 +585,20 @@ for episode in range(TOTAL_EPISODES):
         if keyboard.is_pressed(keyboard.KEY_UP):
             time.sleep(0.15)
     
-    avg_rewards = sum(model.rewards) / len(model.rewards)
+    total_rewards = sum(model.rewards)
     game_length = len(model.rewards) # len(model.rewards) also represents number of moves
 
-    loss_item = model.update()
+    if len(model.rewards) != 0:
+        loss_item = model.update()
 
     wandb.log({
         "episode": episode,
-        "avg_rewards": avg_rewards,
+        "total_rewards": total_rewards,
         "game_length": game_length, 
         "loss": loss_item
     })
+
+    turns += 1
 
     # if episode % 1000 == 0:
     #     print("saving model...")
